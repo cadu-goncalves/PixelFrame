@@ -3,7 +3,7 @@
 #include <RTClite.h>
 #include <SdFat.h>
 #include <IniFileLite.h>
-#include <Adafruit_NeoPixel.h>
+#include <FastLED.h>
 
 /***************************************************
   BMP parsing code based on example sketch for the Adafruit 
@@ -23,14 +23,14 @@ SdFile myFile; // set filesystem
 // In the SD card, place 24 bit color BMP files (be sure they are 24-bit!)
 // There are examples included
 
-// Parameter 1 = number of pixels in strip
-// Parameter 2 = pin number (most are valid)
-// Parameter 3 = pixel type flags, add together as needed:
-//   NEO_RGB     Pixels are wired for RGB bitstream
-//   NEO_GRB     Pixels are wired for GRB bitstream
-//   NEO_KHZ400  400 KHz bitstream (e.g. FLORA pixels)
-//   NEO_KHZ800  800 KHz bitstream (e.g. High Density LED strip)
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(256, 6, NEO_GRB + NEO_KHZ800);
+
+#define DATA_PIN    6
+#define NUM_LEDS    256
+#define LED_TYPE    WS2812
+#define COLOR_ORDER GRB
+
+struct CRGB leds[NUM_LEDS];
+
 
 //Random Number Generator
 byte sample = 0;
@@ -49,6 +49,9 @@ const uint8_t buttonSetupPin = 5;  // "Setup" button
 const boolean debugMode = false;
 
 //System Setup
+CRGB oldcolor; //keeping track of pixels
+const CRGB black = CRGB::Black;
+
 boolean
   folderLoop = true, // animation looping
   moveLoop = false, // translation/pan looping
@@ -93,11 +96,11 @@ int
   offsetY = 0, // for translating images y pixels
   imageWidth = 0,
   imageHeight = 0,
-  ballAngle;
+  ballAngle,
+  holdTime = 200; // millisecods to hold each .bmp frame
 unsigned long
   lastTime = 0, // yep
   drawTime = 0, // debugging time to read from sd
-  holdTime = 200, // millisecods to hold each .bmp frame
   swapTime = 0, // system time to advance to next frame
   baseTime = 0, // system time logged at start of each new image sequence
   buttonTime = 0, // time the last button was pressed (debounce code)
@@ -114,6 +117,8 @@ void setup(void) {
   // debug LED setup
   pinMode(STATUS_LED, OUTPUT);
   analogWrite(STATUS_LED, 100);
+  
+  FastLED.addLeds<LED_TYPE,DATA_PIN,COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
 
   wdtSetup();
  
@@ -122,15 +127,13 @@ void setup(void) {
   digitalWrite(buttonNextPin, HIGH); // turns on pull-up resistor after input
   digitalWrite(buttonSetupPin, HIGH); // turns on pull-up resistor after input
   
-  if (debugMode == true)
-  {
+  
     Serial.begin(57600);
     printFreeRAM();
-  }
-  
+    
   // init clock and begin counting seconds
   rtc.begin();
-  rtc.adjust(DateTime(2014, 1, 1, 0, 0, 0));
+  rtc.adjust(DateTime(2015, 1, 1, 0, 0, 0));
 
   byte output = 0;
 
@@ -148,15 +151,16 @@ void setup(void) {
   if (output >= 1 && output <= 8) cycleTimeSetting = output;
   setCycleTime();
 
-  strip.begin();
-  strip.show(); // Initialize all pixels to 'off'
-  strip.setBrightness(brightness * brightnessMultiplier);
+  
+  FastLED.setBrightness(brightness * brightnessMultiplier);
+  FastLED.clear(); // Initialize all pixels to 'off'
+  FastLED.show();
 
   // run burn in test if both buttons held on boot
   if ((digitalRead(buttonNextPin) == LOW) && (digitalRead(buttonSetupPin) == LOW))
   {
-    // max brightness
-    strip.setBrightness(7 * brightnessMultiplier);
+    // set max brightness
+    FastLED.setBrightness(7 * brightnessMultiplier);
     while (true)
     {
       testScreen();
@@ -167,7 +171,7 @@ void setup(void) {
   if (digitalRead(buttonSetupPin) == LOW)
   {
     brightness = 1;
-    strip.setBrightness(brightness * brightnessMultiplier);
+    FastLED.setBrightness(brightness * brightnessMultiplier);
     playMode = 0;
     cycleTimeSetting = 2;
     setCycleTime();
@@ -199,8 +203,8 @@ void setup(void) {
       Serial.println(F("---"));
       if (verboseOutput == true)
       {
-        strip.setPixelColor(numFolders, strip.Color(128, 255, 0));
-        strip.show();
+       leds[numFolders].setRGB(128, 255, 0);
+        FastLED.show();
       }
       numFolders++;
       Serial.print(F("File Index: "));
@@ -224,53 +228,47 @@ void setup(void) {
 
 void testScreen()
 {
+/*
+
   // white
-  for (int i=0; i<256; i++)
-  {
-    strip.setPixelColor(i, strip.Color(255, 255, 255));
-  }
-  strip.show();
-  delay(2000);
+    fill_solid(leds, NUM_LEDS, CRGB::White);
+  
+  FastLED.show();
+  delay(1000);
 
   // red
-  for (int i=0; i<256; i++)
-  {
-    strip.setPixelColor(i, strip.Color(255, 0, 0));
-  }
-  strip.show();
-  delay(2000);
+  fill_solid(leds, NUM_LEDS, CRGB::Red);
+  FastLED.show();
+  delay(1000);
 
   // green
-  for (int i=0; i<256; i++)
-  {
-    strip.setPixelColor(i, strip.Color(0, 255, 0));
-  }
-  strip.show();
-  delay(2000);
+  fill_solid(leds, NUM_LEDS, CRGB::Green);
+  FastLED.show();
+  delay(1000);
 
   // blue
-  for (int i=0; i<256; i++)
-  {
-    strip.setPixelColor(i, strip.Color(0, 0, 255));
-  }
-  strip.show();
+  fill_solid(leds, NUM_LEDS, CRGB::Blue);
+  FastLED.show();
   delay(2000);
+  */
 }
 
 void sdErrorMessage()
 {
+ /*
+ 
   // red bars
   for (int index=64; index<80; index++)
   {
-    strip.setPixelColor(index, strip.Color(255, 0, 0));
+    leds[index] = CRGB::Red;
   }
   for (int index=80; index<192; index++)
   {
-    strip.setPixelColor(index, strip.Color(0, 0, 0));
+    leds[index] = CRGB::Black;
   }
   for (int index=192; index<208; index++)
   {
-    strip.setPixelColor(index, strip.Color(255, 0, 0));
+    leds[index] = CRGB::Red;
   }
   // S
   yellowDot(7, 6);
@@ -296,8 +294,8 @@ void sdErrorMessage()
   yellowDot(9, 8);
   yellowDot(9, 9);
 
-  strip.setBrightness(brightness * brightnessMultiplier);
-  strip.show();
+  FastLED.setBrightness(brightness * brightnessMultiplier);
+  FastLED.show();
   
   while (true)
   {
@@ -312,12 +310,16 @@ void sdErrorMessage()
       delay(1);
     }
   }
+  
+  */
 }
 
+/*
 void yellowDot(byte x, byte y)
 {
-  strip.setPixelColor(getIndex(x, y), strip.Color(255, 255, 0));
+  leds[getIndex(x, y)].setRGB(255, 255, 0);
 }
+*/
 
 void setCycleTime()
 {
@@ -354,6 +356,7 @@ void setCycleTime()
     cycleTime = 10;
   }
 }
+
 
 void statusLedFlicker()
 {
@@ -424,7 +427,7 @@ void mainLoop()
         itoa(brightness, brightChar, 10);
         strcat(brightFile, brightChar);
         strcat(brightFile, ".bmp");
-        strip.setBrightness(brightness * brightnessMultiplier);
+        FastLED.setBrightness(brightness * brightnessMultiplier);
         bmpDraw(brightFile, 0, 0);
       }
       
@@ -489,11 +492,11 @@ void mainLoop()
         ballIndex = 216;
         holdTime = 0;
         fileIndex = 0;
-        strip.setPixelColor(ballIndex, strip.Color(175, 255, 15));
-        strip.setPixelColor(paddleIndex, strip.Color(200, 200, 200));
-        strip.setPixelColor(paddleIndex + 1, strip.Color(200, 200, 200));
-        strip.setPixelColor(paddleIndex + 2, strip.Color(200, 200, 200));
-        strip.show();
+        leds[ballIndex].setRGB(175, 255, 15);
+        leds[paddleIndex].setRGB(200, 200, 200);
+        leds[paddleIndex + 1].setRGB(200, 200, 200);
+        leds[paddleIndex + 2].setRGB(200, 200, 200);
+        FastLED.show();
       }
     }
   }
@@ -632,7 +635,7 @@ void mainLoop()
     }
 
     // animate if not a single-frame & animations are on
-    if (holdTime != -1 && playMode != 2 || logoPlayed < 2)
+    if (holdTime != -1 && (playMode != 2 || logoPlayed < 2))
     {
       if (millis() >= swapTime)
       {
@@ -1005,7 +1008,7 @@ void refreshImageDimensions(char *filename) {
 // makes loading a little faster.  20 pixels seems a
 // good balance.
 
-void bmpDraw(char *filename, uint8_t x, uint8_t y) {
+void bmpDraw(const char *filename, uint8_t x, uint8_t y) {
 
   int  bmpWidth, bmpHeight;   // W+H in pixels
   uint8_t  bmpDepth;              // Bit depth (currently must be 24)
@@ -1092,7 +1095,7 @@ void bmpDraw(char *filename, uint8_t x, uint8_t y) {
         }
         
         // initialize our pixel index
-        byte index = 0; // a byte is perfect for a 16x16 grid
+        //byte index = 0; // a byte is perfect for a 16x16 grid
 
         // Crop area to be loaded
         w = bmpWidth;
@@ -1134,40 +1137,40 @@ void bmpDraw(char *filename, uint8_t x, uint8_t y) {
             if (row >= bmpHeight - offsetY)
             {
               // black pixel
-              strip.setPixelColor(getIndex(col, row), strip.Color(0, 0, 0));
+              leds[getIndex(col, row)] = CRGB::Black;
             }
             // offsetY is negative
             else if (row < offsetY * -1)
             {
               // black pixel
-              strip.setPixelColor(getIndex(col, row), strip.Color(0, 0, 0));
+              leds[getIndex(col, row)] = CRGB::Black;
             }
             // offserX is beyond bmpWidth
             else if (col >= bmpWidth + offsetX)
             {
               // black pixel
-              strip.setPixelColor(getIndex(col, row), strip.Color(0, 0, 0));
+              leds[getIndex(col, row)] = CRGB::Black;
             }
             // offsetX is positive
             else if (col < offsetX)
             {
               // black pixel
-              strip.setPixelColor(getIndex(col, row), strip.Color(0, 0, 0));
+              leds[getIndex(col, row)] = CRGB::Black;
             }
             // all good
-            else strip.setPixelColor(getIndex(col+x, row), strip.Color(r, g, b));
+            else leds[getIndex(col+x, row)].setRGB(r, g, b);
             // paint pixel color
           } // end pixel
         } // end scanline
       } // end goodBmp
     }
   }
-  strip.show();
+  FastLED.show();
   // NOTE: strip.show() halts all interrupts, including the system clock.
   // Each call results in about 6825 microseconds lost to the void.
   if (singleGraphic == false || setupActive == true)
   {
-    Serial.println(F("Closing Image..."));
+    Serial.println(F("Closing Image...")); 
     myFile.close();
   }
   if(!goodBmp) Serial.println(F("Format unrecognized."));
@@ -1195,7 +1198,7 @@ void clearStripBuffer()
 {
   for (int i=0; i<256; i++)
   {
-    strip.setPixelColor(i, strip.Color(0, 0, 0));
+    leds[i] = CRGB::Black;
   }
 }
 
@@ -1391,10 +1394,10 @@ void readIniFile()
 // breakout code
 void drawPaddle()
 {
-  strip.setPixelColor(paddleIndex, strip.Color(200, 200, 200));
-  strip.setPixelColor(paddleIndex+1, strip.Color(200, 200, 200));
-  strip.setPixelColor(paddleIndex+2, strip.Color(200, 200, 200));
-  strip.show();
+  leds[paddleIndex].setRGB(200, 200, 200);
+  leds[paddleIndex+1].setRGB(200, 200, 200);
+  leds[paddleIndex+2].setRGB(200, 200, 200);
+  FastLED.show();
 }
 
 void breakoutLoop()
@@ -1411,7 +1414,7 @@ void breakoutLoop()
   if (digitalRead(buttonSetupPin) == LOW && holdTime == 0 && paddleIndex < 237 && gameInitialized == true && buttonEnabled == true)
   {
     paddleIndex++;
-    strip.setPixelColor(paddleIndex-1, strip.Color(0, 0, 0));
+    leds[paddleIndex-1] = CRGB::Black;
     drawPaddle();
     holdTime = 3000;
     if (ballMoving == false)
@@ -1426,7 +1429,7 @@ void breakoutLoop()
   else if (digitalRead(buttonNextPin) == LOW && holdTime == 0 && paddleIndex > 224 && buttonEnabled == true)
   {
     paddleIndex--;
-    strip.setPixelColor(paddleIndex+3, strip.Color(0, 0, 0));
+    leds[paddleIndex+3] = CRGB::Black;
     drawPaddle();
     holdTime = 3000;
     if (ballMoving == false)
@@ -1443,7 +1446,7 @@ void breakoutLoop()
   if (ballMoving == true && fileIndex == 0)
   {
     fileIndex = swapTime;
-    strip.setPixelColor(ballIndex, strip.Color(0, 0, 0));
+    leds[ballIndex] = CRGB::Black;
 
     // did the player lose?
     if (ballIndex >= 239)
@@ -1470,9 +1473,9 @@ void breakoutLoop()
           {
             b = c;
           }
-          strip.setPixelColor(i, strip.Color(r, g, b));
+          leds[i].setRGB(r, g, b);
         }
-        strip.show();
+        FastLED.show();
       }
     }
     
@@ -1516,13 +1519,21 @@ void breakoutLoop()
           ballAngle = random(190, 245);
         }
         ballIndex = getScreenIndex(ballX, ballY);
-        strip.setPixelColor(paddleIndex, strip.Color(200, 200, 200));
-        strip.setPixelColor(paddleIndex+1, strip.Color(200, 200, 200));
-        strip.setPixelColor(paddleIndex+2, strip.Color(200, 200, 200));
+        leds[paddleIndex].setRGB(200, 200, 200);
+        leds[paddleIndex+1].setRGB(200, 200, 200);
+        leds[paddleIndex+2].setRGB(200, 200, 200);
       }
       
-      // brick hit?
-      if (strip.getPixelColor(ballIndex) > 0)
+      // brick hit?  
+      //
+      // NOTE TO SELF:
+      // also try this
+      // if (leds[ballindex]) {
+      // meaning leds[i] is somewhat lit 
+      //
+      
+      oldcolor = leds[ballIndex];
+      if (oldcolor != black)
       {
         // speed up and change direction
         swapTime = swapTime - 30;
@@ -1546,26 +1557,27 @@ void breakoutLoop()
       // check for preceeding win
       if (breakout == true)
       {
-        strip.setPixelColor(ballIndex, strip.Color(175, 255, 15));
-        strip.show();
+        leds[ballIndex].setRGB(175, 255, 15);
+        FastLED.show();
       }
     }
   }
 }
 
-void chdirFirework()
+void chdirFirework(void)
 {
   char tmp[20];
   strcpy_P(tmp, PSTR("/00system/firework"));
   sd.chdir(tmp);
 }
 
-boolean winCheck()
+boolean winCheck(void)
 {
   byte numberOfLitPixels = 0;
   for (byte i=0; i<255; i++)
   {
-    if (strip.getPixelColor(i) > 0)
+    oldcolor = leds[i];
+    if (oldcolor != black)
     {
       numberOfLitPixels++;
     }
@@ -1574,7 +1586,9 @@ boolean winCheck()
   {
     return true;
   }
+  return false;
 }
+// warning: control reaches end of non-void function
 
 byte getScreenIndex(byte x, byte y)
 {
@@ -1686,7 +1700,7 @@ int freeRam () {
   return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval);
 }
 
-// Random Number Generation ("probably_random")
+// Probably Random Number Generation
 // https://gist.github.com/endolith/2568571
 // Rotate bits to the left
 // https://en.wikipedia.org/wiki/Circular_shift#Implementing_circular_shifts
