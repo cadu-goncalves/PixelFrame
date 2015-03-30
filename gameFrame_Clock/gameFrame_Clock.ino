@@ -3,7 +3,7 @@
 #include <RTClite.h>
 #include <SdFat.h>
 #include <IniFileLite.h>
-#include <FastLED.h>
+#include <Adafruit_NeoPixel.h>
 
 /***************************************************
   BMP parsing code based on example sketch for the Adafruit 
@@ -23,14 +23,14 @@ SdFile myFile; // set filesystem
 // In the SD card, place 24 bit color BMP files (be sure they are 24-bit!)
 // There are examples included
 
-
-#define DATA_PIN    6
-#define NUM_LEDS    256
-#define LED_TYPE    WS2812
-#define COLOR_ORDER GRB
-
-struct CRGB leds[NUM_LEDS];
-
+// Parameter 1 = number of pixels in strip
+// Parameter 2 = pin number (most are valid)
+// Parameter 3 = pixel type flags, add together as needed:
+//   NEO_RGB     Pixels are wired for RGB bitstream
+//   NEO_GRB     Pixels are wired for GRB bitstream
+//   NEO_KHZ400  400 KHz bitstream (e.g. FLORA pixels)
+//   NEO_KHZ800  800 KHz bitstream (e.g. High Density LED strip)
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(256, 6, NEO_GRB + NEO_KHZ800);
 
 //Random Number Generator
 byte sample = 0;
@@ -45,27 +45,28 @@ const uint8_t buttonSetupPin = 5;  // "Setup" button
 #define STATUS_LED 3
 
 //Enable prints?
-//Due to memory contraints Breakout is disabled in debugMode
 const boolean debugMode = false;
 
 //System Setup
-CRGB oldcolor; //keeping track of pixels
-const CRGB black = CRGB::Black;
-
 boolean
+  logoPlayed = false, // plays logo animation correctly reardless of playMode
   folderLoop = true, // animation looping
   moveLoop = false, // translation/pan looping
   buttonPressed = false, // control button check
   buttonEnabled = true, // debounce guard
-  setupActive = false, // set brightness, playback mode, etc.
+  setupActive = false, // showing menus (set brightness, playback mode, etc.)
   panoff = true, // movement scrolls off screen
   singleGraphic = false, // single BMP file
   abortImage = false, // image is corrupt; abort, retry, fail?
   verboseOutput = false, // output extra info to LEDs
   statusLedState = false, // flicker tech
-  breakout = false, // breakout playing?
-  ballMoving = false,
-  gameInitialized = false;
+  clockShown = false, // clock mode?
+  clockSet = false, // have we set the time?
+  clockSetBlink = false, // flicker digit
+  clockDigitSet = false, // is hours/minutes set?
+  enableSecondHand = true,
+  clockAnimationActive = false, // currently showing clock anim
+  hour12 = true; // 12-hour clock?
 byte
   playMode = 0, // 0 = sequential, 1 = random, 2 = pause animations
   gameMode = 1, // breakout, ???
@@ -75,12 +76,14 @@ byte
   fpShield = 0, // button false positive shield
   setupMode = 0, // 0 = brightmess, 1 = play mode, 2 = cycle time
   lowestMem = 250, // storage for lowest number of available bytes
-  logoPlayed = 0, // hack for playing logo correctly reardless of playMode
-  paddleIndex = 230,
-  ballX = 112,
-  ballY = 208,
-  ballIndex = 216,
-  currentSecond = 255; // current second
+  clockAnimationLength = 5, // seconds to play clock animations
+  secondHandX = 0,
+  secondHandY = 0,
+  secondOffset = 0,
+  lastSecond = 255, // a moment ago
+  currentHour = 12,
+  currentMinute = 0,
+  currentSecond = 0;
 int
   secondCounter = 0, // counts up every second
   cycleTime = 30, // seconds to wait before progressing to next folder
@@ -95,20 +98,20 @@ int
   offsetX = 0, // for translating images x pixels
   offsetY = 0, // for translating images y pixels
   imageWidth = 0,
-  imageHeight = 0,
-  ballAngle,
-  holdTime = 200; // millisecods to hold each .bmp frame
+  imageHeight = 0;
 unsigned long
+  secondHandColor = 0, // color grabbed from digits.bmp for second hand
   lastTime = 0, // yep
   drawTime = 0, // debugging time to read from sd
+  holdTime = 200, // millisecods to hold each .bmp frame
   swapTime = 0, // system time to advance to next frame
   baseTime = 0, // system time logged at start of each new image sequence
   buttonTime = 0, // time the last button was pressed (debounce code)
   setupEndTime = 0, // pause animation while in setup mode
   setupEnterTime = 0; // time we enter setup
-char 
+char
   chainRootFolder[9], // chain game
-  nextFolder[18] = "00system/logo"; // dictated next animation
+  nextFolder[21] = "00system/logo"; // dictated next animation
 
 RTC_DS1307 rtc;
 DateTime now;
@@ -117,23 +120,23 @@ void setup(void) {
   // debug LED setup
   pinMode(STATUS_LED, OUTPUT);
   analogWrite(STATUS_LED, 100);
-  
-  FastLED.addLeds<LED_TYPE,DATA_PIN,COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
 
   wdtSetup();
- 
+  
   pinMode(buttonNextPin, INPUT);    // button as input
   pinMode(buttonSetupPin, INPUT);    // button as input
   digitalWrite(buttonNextPin, HIGH); // turns on pull-up resistor after input
   digitalWrite(buttonSetupPin, HIGH); // turns on pull-up resistor after input
   
-  
+  if (debugMode == true)
+  {
     Serial.begin(57600);
     printFreeRAM();
-    
+  }
+  
   // init clock and begin counting seconds
   rtc.begin();
-  rtc.adjust(DateTime(2015, 1, 1, 0, 0, 0));
+  adjustClock();
 
   byte output = 0;
 
@@ -151,16 +154,15 @@ void setup(void) {
   if (output >= 1 && output <= 8) cycleTimeSetting = output;
   setCycleTime();
 
-  
-  FastLED.setBrightness(brightness * brightnessMultiplier);
-  FastLED.clear(); // Initialize all pixels to 'off'
-  FastLED.show();
+  strip.begin();
+  strip.show(); // Initialize all pixels to 'off'
+  strip.setBrightness(brightness * brightnessMultiplier);
 
   // run burn in test if both buttons held on boot
   if ((digitalRead(buttonNextPin) == LOW) && (digitalRead(buttonSetupPin) == LOW))
   {
-    // set max brightness
-    FastLED.setBrightness(7 * brightnessMultiplier);
+    // max brightness
+    strip.setBrightness(7 * brightnessMultiplier);
     while (true)
     {
       testScreen();
@@ -171,7 +173,7 @@ void setup(void) {
   if (digitalRead(buttonSetupPin) == LOW)
   {
     brightness = 1;
-    FastLED.setBrightness(brightness * brightnessMultiplier);
+    strip.setBrightness(brightness * brightnessMultiplier);
     playMode = 0;
     cycleTimeSetting = 2;
     setCycleTime();
@@ -203,8 +205,8 @@ void setup(void) {
       Serial.println(F("---"));
       if (verboseOutput == true)
       {
-       leds[numFolders].setRGB(128, 255, 0);
-        FastLED.show();
+        strip.setPixelColor(numFolders, strip.Color(128, 255, 0));
+        strip.show();
       }
       numFolders++;
       Serial.print(F("File Index: "));
@@ -222,53 +224,62 @@ void setup(void) {
   {
     delay(5000);
   }
-  nextImage();
+  
+  // play logo animation
+  sd.chdir(nextFolder);
+  readIniFile();
   drawFrame();
 }
 
 void testScreen()
 {
-/*
-
   // white
-    fill_solid(leds, NUM_LEDS, CRGB::White);
-  
-  FastLED.show();
-  delay(1000);
+  for (int i=0; i<256; i++)
+  {
+    strip.setPixelColor(i, strip.Color(255, 255, 255));
+  }
+  strip.show();
+  delay(2000);
 
   // red
-  fill_solid(leds, NUM_LEDS, CRGB::Red);
-  FastLED.show();
-  delay(1000);
+  for (int i=0; i<256; i++)
+  {
+    strip.setPixelColor(i, strip.Color(255, 0, 0));
+  }
+  strip.show();
+  delay(2000);
 
   // green
-  fill_solid(leds, NUM_LEDS, CRGB::Green);
-  FastLED.show();
-  delay(1000);
+  for (int i=0; i<256; i++)
+  {
+    strip.setPixelColor(i, strip.Color(0, 255, 0));
+  }
+  strip.show();
+  delay(2000);
 
   // blue
-  fill_solid(leds, NUM_LEDS, CRGB::Blue);
-  FastLED.show();
+  for (int i=0; i<256; i++)
+  {
+    strip.setPixelColor(i, strip.Color(0, 0, 255));
+  }
+  strip.show();
   delay(2000);
-  */
 }
 
 void sdErrorMessage()
 {
- /*
- 
   // red bars
   for (int index=64; index<80; index++)
   {
-    leds[index] = CRGB::Red;
+    strip.setPixelColor(index, strip.Color(255, 0, 0));
   }
   for (int index=80; index<192; index++)
   {
-    leds[index] = CRGB::Black;
+    strip.setPixelColor(index, strip.Color(0, 0, 0));
   }
   for (int index=192; index<208; index++)
   {
-    leds[index] = CRGB::Red;
+    strip.setPixelColor(index, strip.Color(255, 0, 0));
   }
   // S
   yellowDot(7, 6);
@@ -294,8 +305,8 @@ void sdErrorMessage()
   yellowDot(9, 8);
   yellowDot(9, 9);
 
-  FastLED.setBrightness(brightness * brightnessMultiplier);
-  FastLED.show();
+  strip.setBrightness(brightness * brightnessMultiplier);
+  strip.show();
   
   while (true)
   {
@@ -310,16 +321,12 @@ void sdErrorMessage()
       delay(1);
     }
   }
-  
-  */
 }
 
-/*
 void yellowDot(byte x, byte y)
 {
-  leds[getIndex(x, y)].setRGB(255, 255, 0);
+  strip.setPixelColor(getIndex(x, y), strip.Color(255, 255, 0));
 }
-*/
 
 void setCycleTime()
 {
@@ -357,7 +364,6 @@ void setCycleTime()
   }
 }
 
-
 void statusLedFlicker()
 {
   if (statusLedState == false)
@@ -373,21 +379,7 @@ void statusLedFlicker()
 }
 
 void loop() {
-
-  if (breakout == false)
-  {
     mainLoop();
-  }
-  
-  else
-  {
-    if (!debugMode) breakoutLoop();
-    if (breakout == false)
-    {
-      nextImage();
-      drawFrame();
-    }
-  }
 }
 
 void mainLoop()
@@ -396,7 +388,7 @@ void mainLoop()
   now = rtc.now();
 
   // next button
-  if (digitalRead(buttonNextPin) == LOW && buttonPressed == false && buttonEnabled == true)
+  if (digitalRead(buttonNextPin) == LOW && buttonPressed == false && buttonEnabled == true && !clockShown)
   {
     buttonPressed = true;
     if (setupActive == false)
@@ -404,7 +396,6 @@ void mainLoop()
       // exit chaining if necessary
       if (chainIndex > -1)
       {
-
         chainIndex = -1;
         chainRootFolder[0] = '\0';
         sd.chdir("/");
@@ -427,7 +418,7 @@ void mainLoop()
         itoa(brightness, brightChar, 10);
         strcat(brightFile, brightChar);
         strcat(brightFile, ".bmp");
-        FastLED.setBrightness(brightness * brightnessMultiplier);
+        strip.setBrightness(brightness * brightnessMultiplier);
         bmpDraw(brightFile, 0, 0);
       }
       
@@ -460,45 +451,22 @@ void mainLoop()
         bmpDraw(timeFile, 0, 0);
       }
 
-      // breakout time
+      // clock mode
       else if (setupMode == 3)
       {
-        setupActive = false;
-        if (EEPROM.read(0) != brightness)
-        {
-          EEPROM.write(0, brightness);
-        }
-        if (EEPROM.read(1) != playMode)
-        {
-          EEPROM.write(1, playMode);
-        }
-        if (EEPROM.read(2) != cycleTimeSetting)
-        {
-          EEPROM.write(2, cycleTimeSetting);
-        }
-        
-        buttonTime = millis();
-        breakout = true;
-        gameInitialized = false;
-        buttonEnabled = false;
-
-        char tmp[23];
-        strcpy_P(tmp, PSTR("/00system/breakout.bmp"));
-        bmpDraw(tmp, 0, 0);
-
-        paddleIndex = 230,
-        ballX = 112,
-        ballY = 208,
-        ballIndex = 216;
-        holdTime = 0;
-        fileIndex = 0;
-        leds[ballIndex].setRGB(175, 255, 15);
-        leds[paddleIndex].setRGB(200, 200, 200);
-        leds[paddleIndex + 1].setRGB(200, 200, 200);
-        leds[paddleIndex + 2].setRGB(200, 200, 200);
-        FastLED.show();
+        initClock();
       }
     }
+  }
+  
+  // reset clock
+  if (digitalRead(buttonNextPin) == LOW && buttonPressed == false && buttonEnabled == true && clockShown)
+  {
+    buttonPressed = true;
+    clockSet = false;
+    clockSetBlink = false;
+    getCurrentTime();
+    setClock();
   }
 
   // setup button
@@ -516,6 +484,13 @@ void mainLoop()
       offsetX = 0;
       offsetY = 0;
       if (myFile.isOpen()) myFile.close();
+      if (clockShown || clockAnimationActive)
+      {
+        clockAnimationActive = false;
+        clockShown = false;
+        abortImage = true;
+        nextFolder[0] = '\0';
+      }
     }
     else
     {
@@ -554,19 +529,13 @@ void mainLoop()
     }
     else if (setupMode == 3)
     {
+      char gameChar[2];
       char gameFile[21];
-      strcpy_P(gameFile, PSTR("/00system/game.bmp"));
+      strcpy_P(gameFile, PSTR("/00system/clock.bmp"));
       bmpDraw(gameFile, 0, 0);
     }
   }
 
-  if (((digitalRead(buttonSetupPin) == HIGH) && digitalRead(buttonNextPin) == HIGH) && buttonPressed == true)
-  {
-    buttonPressed = false;
-    buttonEnabled = false;
-    buttonTime = millis();
-  }
-  
   // time to exit setup mode?
   if (setupActive == true)
   {
@@ -600,7 +569,7 @@ void mainLoop()
       }
       swapTime = swapTime + (millis() - setupEnterTime);
       baseTime = baseTime + (millis() - setupEnterTime);
-      if ((holdTime != -1 || playMode != 2) && abortImage == false)
+      if (abortImage == false)
       {
         drawFrame();
       }
@@ -608,42 +577,58 @@ void mainLoop()
   }
   
   // currently playing images?
-  if (setupActive == false && breakout == false)
+  if (setupActive == false)
   {
-    // advance counter
-    if (now.second() != currentSecond)
+    if (clockShown == false || clockAnimationActive == true)
     {
-      currentSecond = now.second();
-      secondCounter++;
-    }
-    // did image load fail?
-    if (abortImage == true)
-    {
-      abortImage = false;
-      nextImage();
-      drawFrame();
-    }
-    // progress if cycleTime is up
-    // check for infinite mode
-    if (cycleTimeSetting != 8)
-    {
-      if (secondCounter >= cycleTime)
+      // advance counter
+      if (now.second() != currentSecond)
       {
+        currentSecond = now.second();
+        secondCounter++;
+        // revert to clock display if animation played for 5 seconds
+        if (clockAnimationActive == true && secondCounter >= clockAnimationLength)
+        {
+          initClock();
+        }
+      }
+  
+      // did image load fail?
+      if (abortImage == true && clockShown == false)
+      {
+        abortImage = false;
         nextImage();
         drawFrame();
       }
-    }
-
-    // animate if not a single-frame & animations are on
-    if (holdTime != -1 && (playMode != 2 || logoPlayed < 2))
-    {
-      if (millis() >= swapTime)
+  
+      // progress to next folder if cycleTime is up
+      // check for infinite mode
+      else if (cycleTimeSetting != 8  && clockShown == false && clockAnimationActive == false)
       {
-        statusLedFlicker();
-        swapTime = millis() + holdTime;
-        fileIndex++;
-        drawFrame();
+        if (secondCounter >= cycleTime)
+        {
+          nextImage();
+          drawFrame();
+        }
       }
+  
+      // animate if not a single-frame & animations are on
+      if (holdTime != -1 && playMode != 2 || logoPlayed == false)
+      {
+        if (millis() >= swapTime && clockShown == false)
+        {
+          statusLedFlicker();
+          swapTime = millis() + holdTime;
+          fileIndex++;
+          drawFrame();
+        }
+      }
+    }
+  
+    // show clock
+    else if (clockShown == true && clockAnimationActive == false)
+    {
+      showClock();
     }
   }
 }
@@ -654,7 +639,8 @@ void nextImage()
   Serial.println(F("Next Folder..."));
   if (myFile.isOpen()) myFile.close();
   boolean foundNewFolder = false;
-  secondCounter = 0;
+  // reset secondCounter if not playing clock animations
+  if (!clockAnimationActive) secondCounter = 0;
   baseTime = millis();
   holdTime = 0;
   char folder[9];
@@ -663,7 +649,7 @@ void nextImage()
   offsetX = 0;
   offsetY = 0;
   singleGraphic = false;
-  if (logoPlayed < 2) logoPlayed++;
+  if (!logoPlayed) logoPlayed = true;
   
   // are we chaining folders?
   if (chainIndex > -1)
@@ -868,6 +854,11 @@ void nextImage()
     Serial.println(F("Empty folder!"));
     nextImage();
   }
+
+  // for some reason, leaving this in keeps the code from crashing. 
+  // It MUST be stored PSTR. Bad Flash bytes?
+  char antiCrash[9];
+  strcpy_P(antiCrash, PSTR("c"));
 }
 
 void drawFrame()
@@ -1008,7 +999,7 @@ void refreshImageDimensions(char *filename) {
 // makes loading a little faster.  20 pixels seems a
 // good balance.
 
-void bmpDraw(const char *filename, uint8_t x, uint8_t y) {
+void bmpDraw(char *filename, uint8_t x, uint8_t y) {
 
   int  bmpWidth, bmpHeight;   // W+H in pixels
   uint8_t  bmpDepth;              // Bit depth (currently must be 24)
@@ -1095,7 +1086,7 @@ void bmpDraw(const char *filename, uint8_t x, uint8_t y) {
         }
         
         // initialize our pixel index
-        //byte index = 0; // a byte is perfect for a 16x16 grid
+        byte index = 0; // a byte is perfect for a 16x16 grid
 
         // Crop area to be loaded
         w = bmpWidth;
@@ -1137,43 +1128,46 @@ void bmpDraw(const char *filename, uint8_t x, uint8_t y) {
             if (row >= bmpHeight - offsetY)
             {
               // black pixel
-              leds[getIndex(col, row)] = CRGB::Black;
+              strip.setPixelColor(getIndex(col, row), strip.Color(0, 0, 0));
             }
             // offsetY is negative
             else if (row < offsetY * -1)
             {
               // black pixel
-              leds[getIndex(col, row)] = CRGB::Black;
+              strip.setPixelColor(getIndex(col, row), strip.Color(0, 0, 0));
             }
             // offserX is beyond bmpWidth
             else if (col >= bmpWidth + offsetX)
             {
               // black pixel
-              leds[getIndex(col, row)] = CRGB::Black;
+              strip.setPixelColor(getIndex(col, row), strip.Color(0, 0, 0));
             }
             // offsetX is positive
             else if (col < offsetX)
             {
               // black pixel
-              leds[getIndex(col, row)] = CRGB::Black;
+              strip.setPixelColor(getIndex(col, row), strip.Color(0, 0, 0));
             }
             // all good
-            else leds[getIndex(col+x, row)].setRGB(r, g, b);
+            else strip.setPixelColor(getIndex(col+x, row), strip.Color(r, g, b));
             // paint pixel color
           } // end pixel
         } // end scanline
       } // end goodBmp
     }
   }
-  FastLED.show();
-  // NOTE: strip.show() halts all interrupts, including the system clock.
-  // Each call results in about 6825 microseconds lost to the void.
+  if (!clockShown)
+  {
+    strip.show();
+    // NOTE: strip.show() halts all interrupts, including the system clock.
+    // Each call results in about 6825 microseconds lost to the void.
+  }
   if (singleGraphic == false || setupActive == true)
   {
-    Serial.println(F("Closing Image...")); 
+    Serial.println(F("Closing Image..."));
     myFile.close();
   }
-  if(!goodBmp) Serial.println(F("Format unrecognized."));
+  if(!goodBmp) Serial.println(F("Format unrecognized"));
 }
 
 byte getIndex(byte x, byte y)
@@ -1198,7 +1192,7 @@ void clearStripBuffer()
 {
   for (int i=0; i<256; i++)
   {
-    leds[i] = CRGB::Black;
+    strip.setPixelColor(i, strip.Color(0, 0, 0));
   }
 }
 
@@ -1215,6 +1209,340 @@ void buttonDebounce()
   {
     if (millis() > buttonTime + 50) buttonEnabled = true;
   }
+}
+
+// Clock
+
+void debugClockDisplay()
+{
+  // digital clock display of the time
+  Serial.print(currentHour);
+  printDigits(currentMinute);
+  printDigits(currentSecond);
+  Serial.println();
+}
+
+void printDigits(int digits)
+{
+  // utility function for clock display: prints preceding colon and leading 0
+  Serial.print(":");
+  if(digits < 10)
+    Serial.print('0');
+  Serial.print(digits);
+}
+
+void initClock()
+{
+  if (EEPROM.read(0) != brightness)
+  {
+    EEPROM.write(0, brightness);
+  }
+  if (EEPROM.read(1) != playMode)
+  {
+    EEPROM.write(1, playMode);
+  }
+  if (EEPROM.read(2) != cycleTimeSetting)
+  {
+    EEPROM.write(2, cycleTimeSetting);
+  }
+  
+  secondCounter = 0;
+  setupActive = false;
+  clockShown = true;
+  clockAnimationActive = false;
+  buttonTime = millis();
+  setupMode = 0;
+  lastSecond = 255;
+  
+  if (myFile.isOpen()) myFile.close();
+  holdTime = 0;
+  sd.chdir("/");
+  fileIndex = 0;
+  singleGraphic = true;
+  if (!logoPlayed) logoPlayed = true;
+  
+  readClockIni();
+
+  if (!clockSet)
+  {
+    currentHour = 12;
+    currentMinute = 0;
+    setClock();
+  }
+  if (!enableSecondHand)
+  {
+    drawDigits();
+    strip.show();
+  }
+}
+
+void setClock()
+{
+  clockSet = false;
+  currentSecond = 0;
+  setClockHour();
+  setClockMinute();
+  adjustClock();
+  lastSecond = 255;
+  now = rtc.now();
+}
+
+void setClockHour()
+{
+  // rtc.adjust(DateTime(__DATE__, __TIME__));
+  // set hour
+  while (clockDigitSet == false)
+  {
+    drawDigits();
+    strip.show();
+    buttonDebounce();
+
+    // setup button
+    if (digitalRead(buttonSetupPin) == LOW && buttonPressed == false && buttonEnabled == true && clockSetBlink)
+    {
+      currentHour++;
+
+      // remove the following two "hour12" lines to allow setting 24 hour clock in 12 hour mode
+      // (if you add features that require AM/PM awareness)
+      if (hour12 && currentHour > 12) currentHour -= 12;
+      if (hour12 && currentHour == 0) currentHour = 12;
+
+      if (currentHour > 23) currentHour = 0;
+    }
+
+    // next button
+    if (digitalRead(buttonNextPin) == LOW && buttonPressed == false && buttonEnabled == true)
+    {
+      buttonPressed = true;
+      clockDigitSet = true;
+    }
+  }
+}
+  
+void setClockMinute()
+{
+  // set minutes
+  while (clockDigitSet == true)
+  {
+    drawDigits();
+    strip.show();
+    buttonDebounce();
+
+    // setup button
+    if (digitalRead(buttonSetupPin) == LOW && buttonPressed == false && buttonEnabled == true && clockSetBlink)
+    {
+      currentMinute++;
+      if (currentMinute > 59) currentMinute = 0;
+    }
+
+    // next button
+    if (digitalRead(buttonNextPin) == LOW && buttonPressed == false && buttonEnabled == true)
+    {
+      buttonPressed = true;
+      clockDigitSet = false;
+      clockSetBlink = true;
+    }
+  }
+}
+
+void adjustClock()
+{
+  rtc.adjust(DateTime(2014, 1, 1, currentHour, currentMinute, currentSecond));
+}
+
+void getCurrentTime()
+{
+  currentHour = now.hour();
+  currentMinute = now.minute();
+  currentSecond = now.second();
+}
+
+void showClock()
+{
+  getCurrentTime();
+  if (currentSecond != lastSecond)
+  {
+    secondCounter++;
+    lastSecond = currentSecond;
+    statusLedFlicker();
+
+    // 24 hour conversion
+    if (hour12 && currentHour > 12) currentHour -= 12;
+    if (hour12 && currentHour == 0) currentHour = 12;
+    if (debugMode == true)
+    {
+      debugClockDisplay();
+      printFreeRAM();
+    }
+
+    // draw time
+    if (enableSecondHand)
+    {
+      // offset second hand if required
+      currentSecond = currentSecond + secondOffset;
+      if (currentSecond >= 60) currentSecond -= 60;
+      storeSecondHandColor();
+      drawDigits();
+      secondHand();
+      strip.show();
+    }
+    // second hand disabled, so only draw time on new minute
+    else if (currentSecond == 0)
+    {
+      drawDigits();
+      strip.show();
+    }
+
+    // show an animation
+    if (cycleTime != -1 && clockAnimationLength > 0 && (secondsIntoHour() % cycleTime) == 0 && clockSet == true)
+    {
+      secondCounter = 0;
+      currentSecond = now.second();
+      clockAnimationActive = true;
+      clockShown = false;
+      if (myFile.isOpen()) myFile.close();
+      abortImage = true;
+      nextFolder[0] = '\0';
+    }
+    // this boolean is set here to avoid showing an animation immediately after clock being set
+    else if (!clockSet) clockSet = true;
+  }
+}
+
+int secondsIntoHour()
+{
+  return (currentMinute * 60) + currentSecond;
+}
+
+void drawDigits()
+{
+  clockDigit_1();
+  clockDigit_2();
+  clockDigit_3();
+  clockDigit_4();
+  if (!clockSet) clockSetBlink = !clockSetBlink;
+  if (myFile.isOpen()) myFile.close();
+}
+
+void storeSecondHandColor()
+{
+  getSecondHandIndex();
+  offsetX = 0;
+  offsetY = 176;
+  strcpy_P(nextFolder, PSTR("/00system/digits.bmp"));
+  // max brightness in order to store correct color value
+  strip.setBrightness(255);
+  bmpDraw(nextFolder, 0, 0);
+  secondHandColor = strip.getPixelColor(getIndex(secondHandX, secondHandY));
+  // restore brightness
+  strip.setBrightness(brightness * brightnessMultiplier);
+}
+
+void clockDigit_1()
+{
+  char numChar[3];
+  itoa(currentHour, numChar, 10);
+  byte singleDigit = numChar[0] - '0';
+  offsetX = -1;
+  if (currentHour >= 10)
+  {
+    offsetY = singleDigit * 16;
+  }
+  else offsetY = 160;
+  if (!clockSet && !clockDigitSet && !clockSetBlink)
+  {
+    offsetY = 160;
+  }
+  strcpy_P(nextFolder, PSTR("/00system/digits.bmp"));
+  bmpDraw(nextFolder, 0, 0);
+}
+
+void clockDigit_2()
+{
+  char numChar[3];
+  itoa(currentHour, numChar, 10);
+  byte singleDigit;
+  if (currentHour >= 10)
+  {
+    singleDigit = numChar[1] - '0';
+  }
+  else singleDigit = numChar[0] - '0';
+  offsetX = 0;
+  offsetY = singleDigit * 16;
+  if (!clockSet && !clockDigitSet && !clockSetBlink)
+  {
+    offsetY = 160;
+  }
+  strcpy_P(nextFolder, PSTR("/00system/digits.bmp"));
+  bmpDraw(nextFolder, 3, 0);
+}
+
+void clockDigit_3()
+{
+  char numChar[3];
+  itoa(currentMinute, numChar, 10);
+  byte singleDigit;
+  if (currentMinute >= 10)
+  {
+    singleDigit = numChar[0] - '0';
+  }
+  else singleDigit = 0;
+  offsetY = singleDigit * 16;
+  if (!clockSet && clockDigitSet && !clockSetBlink)
+  {
+    offsetY = 160;
+  }
+  strcpy_P(nextFolder, PSTR("/00system/digits.bmp"));
+  bmpDraw(nextFolder, 8, 0);
+}
+
+void clockDigit_4()
+{
+  char numChar[3];
+  itoa(currentMinute, numChar, 10);
+  byte singleDigit;
+  if (currentMinute >= 10)
+  {
+    singleDigit = numChar[1] - '0';
+  }
+  else singleDigit = numChar[0] - '0';
+  offsetY = singleDigit * 16;
+  if (!clockSet && clockDigitSet && !clockSetBlink)
+  {
+    offsetY = 160;
+  }
+  strcpy_P(nextFolder, PSTR("/00system/digits.bmp"));
+  bmpDraw(nextFolder, 12, 0);
+}
+
+void getSecondHandIndex()
+{
+  if (currentSecond < 16)
+  {
+    secondHandX = currentSecond;
+    secondHandY = 0;
+  }
+  else if (currentSecond >= 16 && currentSecond < 30)
+  {
+    secondHandX = 15;
+    secondHandY = (currentSecond - 15);
+  }
+  else if (currentSecond >= 30 && currentSecond < 46)
+  {
+    secondHandX = (15 - (currentSecond - 30));
+    secondHandY = 15;
+  }
+  else if (currentSecond >= 46)
+  {
+    secondHandX = 0;
+    secondHandY = (15 - (currentSecond - 45));
+  }
+}
+
+void secondHand()
+{
+  getSecondHandIndex();
+  strip.setPixelColor(getIndex(secondHandX, secondHandY), secondHandColor);
 }
 
 // .INI file support
@@ -1391,277 +1719,100 @@ void readIniFile()
   if (ini.isOpen()) ini.close();
 }
 
-// breakout code
-void drawPaddle()
+void readClockIni()
 {
-  leds[paddleIndex].setRGB(200, 200, 200);
-  leds[paddleIndex+1].setRGB(200, 200, 200);
-  leds[paddleIndex+2].setRGB(200, 200, 200);
-  FastLED.show();
-}
-
-void breakoutLoop()
-{
-  if (holdTime > 0) holdTime--;
-  if (fileIndex > 0) fileIndex--;
-  
-  if (buttonEnabled == false)
-  {
-    if (millis() > buttonTime + 50) buttonEnabled = true;
-  }
-  
-  // setup button
-  if (digitalRead(buttonSetupPin) == LOW && holdTime == 0 && paddleIndex < 237 && gameInitialized == true && buttonEnabled == true)
-  {
-    paddleIndex++;
-    leds[paddleIndex-1] = CRGB::Black;
-    drawPaddle();
-    holdTime = 3000;
-    if (ballMoving == false)
-    {
-      ballMoving = true;
-      swapTime = 5000;
-      ballAngle = random(190, 225);
-    }
-  }
-  
-  // next button
-  else if (digitalRead(buttonNextPin) == LOW && holdTime == 0 && paddleIndex > 224 && buttonEnabled == true)
-  {
-    paddleIndex--;
-    leds[paddleIndex+3] = CRGB::Black;
-    drawPaddle();
-    holdTime = 3000;
-    if (ballMoving == false)
-    {
-      ballMoving = true;
-      swapTime = 5000;
-      ballAngle = random(135,170);
-    }
-  }
-  
-  else if (digitalRead(buttonNextPin) == HIGH && gameInitialized == false) gameInitialized = true;
-
-  // ball logic
-  if (ballMoving == true && fileIndex == 0)
-  {
-    fileIndex = swapTime;
-    leds[ballIndex] = CRGB::Black;
-
-    // did the player lose?
-    if (ballIndex >= 239)
-    {
-      ballMoving = false;
-      breakout = false;
-      Serial.print(F("Lose!!!"));
-      for (int c=250; c>=0; c=c-15)
-      {
-        for (int i=0; i<256; i++)
-        {
-          byte r = 0;
-          byte g = 0;
-          byte b = 0;
-          if (random(0, 2))
-          {
-            r = c;
-          }
-          if (random(0, 2))
-          {
-            g = c;
-          }
-          if (random(0, 2))
-          {
-            b = c;
-          }
-          leds[i].setRGB(r, g, b);
-        }
-        FastLED.show();
-      }
-    }
-    
-    // ball still in play
-    else
-    {
-      if (ballAngle < 180)
-      {
-        if ((ballX + sin(degToRad(ballAngle)) * 16) +.5 > 256) swapXdirection();
-      }
-      else
-      {
-        if ((ballX + sin(degToRad(ballAngle)) * 16) +.5 < 0) swapXdirection();
-      }
-      ballX = ballX + sin(degToRad(ballAngle)) * 16 +.5;
-  
-      if (ballAngle > 90 && ballAngle < 270)
-      {
-        if ((ballY + cos(degToRad(ballAngle)) * 16) +.5 < 0) swapYdirection();
-      }
-      else
-      {
-        if ((ballY + cos(degToRad(ballAngle)) * 16) +.5 > 256) swapYdirection();
-      }
-      ballY = ballY + cos(degToRad(ballAngle)) * 16 +.5;
-      ballIndex = getScreenIndex(ballX, ballY);
-      
-      // paddle hit?
-      if (ballIndex == paddleIndex or ballIndex == paddleIndex+1 or ballIndex == paddleIndex+2)
-      {
-        // move the ball back in time one step
-        ballX = ballX + ((sin(degToRad(ballAngle)) * 16 +.5) *-1);
-        ballY = ballY + ((cos(degToRad(ballAngle)) * 16 +.5) *-1);
-        swapYdirection();
-        if (ballIndex == paddleIndex)
-        {
-          ballAngle = random(115,170);
-        }
-        else if (ballIndex == paddleIndex+2)
-        {
-          ballAngle = random(190, 245);
-        }
-        ballIndex = getScreenIndex(ballX, ballY);
-        leds[paddleIndex].setRGB(200, 200, 200);
-        leds[paddleIndex+1].setRGB(200, 200, 200);
-        leds[paddleIndex+2].setRGB(200, 200, 200);
-      }
-      
-      // brick hit?  
-      //
-      // NOTE TO SELF:
-      // also try this
-      // if (leds[ballindex]) {
-      // meaning leds[i] is somewhat lit 
-      //
-      
-      oldcolor = leds[ballIndex];
-      if (oldcolor != black)
-      {
-        // speed up and change direction
-        swapTime = swapTime - 30;
-        swapYdirection();
-        if (winCheck())
-        {
-          Serial.print(F("Win!!!"));
-          ballMoving = false;
-          breakout = false;
-          chdirFirework();
-          char bmpFile[7]; // 2-digit number + .bmp + null byte
-          for (byte fileIndex=0; fileIndex<83; fileIndex++)
-          {
-            itoa(fileIndex, bmpFile, 10);
-            strcat(bmpFile, ".bmp");
-            bmpDraw(bmpFile, 0, 0);
-          }
-        }
-      }
-      
-      // check for preceeding win
-      if (breakout == true)
-      {
-        leds[ballIndex].setRGB(175, 255, 15);
-        FastLED.show();
-      }
-    }
-  }
-}
-
-void chdirFirework(void)
-{
-  char tmp[20];
-  strcpy_P(tmp, PSTR("/00system/firework"));
-  sd.chdir(tmp);
-}
-
-boolean winCheck(void)
-{
-  byte numberOfLitPixels = 0;
-  for (byte i=0; i<255; i++)
-  {
-    oldcolor = leds[i];
-    if (oldcolor != black)
-    {
-      numberOfLitPixels++;
-    }
-  }
-  if (numberOfLitPixels <= 4)
-  {
-    return true;
-  }
-  return false;
-}
-// warning: control reaches end of non-void function
-
-byte getScreenIndex(byte x, byte y)
-{
-  byte screenX = x / 16;
-  byte screenY = y / 16;
-  byte index;
-  index = screenY * 16;
-  if (screenY == 0)
-  {
-    index = 15 - screenX;
-  }
-  else if (screenY % 2 != 0)
-  {
-    index = (screenY * 16) + screenX;
+  const size_t bufferLen = 50;
+  char buffer[bufferLen];
+  char configFile[11];
+  strcpy_P(configFile, PSTR("clock.ini"));
+  const char *filename = configFile;
+  IniFile ini(filename);
+  sd.chdir("/00system");
+  if (!ini.open()) {
+    Serial.print(filename);
+    Serial.println(F(" does not exist"));
+    // Cannot do anything else
   }
   else
   {
-    index = (screenY * 16 + 15) - screenX;
+    Serial.println(F("Ini file exists"));
   }
-  return index;
-}
 
-void swapYdirection()
-{
-  if (ballAngle > 90 && ballAngle < 270)
-  {
-    if (ballAngle > 180)
-    {
-      ballAngle = 360 - (ballAngle - 180);
-    }
-    else
-    {
-      ballAngle = 90 - (ballAngle - 90);
-    }
+  // Check the file is valid. This can be used to warn if any lines
+  // are longer than the buffer.
+  if (!ini.validate(buffer, bufferLen)) {
+    Serial.print(F("ini file "));
+    Serial.print(ini.getFilename());
+    Serial.print(F(" not valid: "));
+    printErrorMessage(ini.getError());
+    // Cannot do anything else
   }
-  else
-  {
-    if (ballAngle < 90)
-    {
-      ballAngle = 90 + (90 - ballAngle);
-    }
-    else
-    {
-      ballAngle = 180 + (360 - ballAngle);
-    }
-  }
-}
+  char section[10];
+  strcpy_P(section, PSTR("clock"));
+  char entry[11];
+  strcpy_P(entry, PSTR("hour12"));
 
-void swapXdirection()
-{
-  if (ballAngle < 180)
-  {
-    if (ballAngle < 90)
-    {
-      ballAngle = 270 + (90 - ballAngle);
-    }
-    else ballAngle = 270 - (ballAngle - 90);
+  // Fetch a boolean value
+  // 12/24 hour mode
+  bool loopCheck;
+  bool found = ini.getValue(section, entry, buffer, bufferLen, loopCheck);
+  if (found) {
+    Serial.print(F("hour12 value: "));
+    // Print value, converting boolean to a string
+    Serial.println(loopCheck ? F("TRUE") : F("FALSE"));
+    hour12 = loopCheck;
   }
-  else
-  {
-    if (ballAngle > 270)
-    {
-      ballAngle = 360 - ballAngle;
-    }
-    else ballAngle = 180 - (ballAngle - 180);
+  else {
+    printErrorMessage(ini.getError());
+    hour12 = true;
   }
-}
+  
+  strcpy_P(entry, PSTR("second"));
 
-float degToRad(float deg)
-{
-  float result;
-  result = deg * PI / 180;
-  return result;
+  // Fetch a boolean value
+  // show second hand
+  found = ini.getValue(section, entry, buffer, bufferLen, loopCheck);
+  if (found) {
+    Serial.print(F("second value: "));
+    // Print value, converting boolean to a string
+    Serial.println(loopCheck ? F("TRUE") : F("FALSE"));
+    enableSecondHand = loopCheck;
+  }
+  else {
+    printErrorMessage(ini.getError());
+    enableSecondHand = true;
+  }
+  
+  strcpy_P(entry, PSTR("offset"));
+
+  // Fetch a value from a key which is present
+  // second hand position offset
+  if (ini.getValue(section, entry, buffer, bufferLen)) {
+    Serial.print(F("offset value: "));
+    Serial.println(buffer);
+    secondOffset = atoi(buffer);
+  }
+  else {
+    printErrorMessage(ini.getError());
+    secondOffset = 0;
+  }
+
+  strcpy_P(entry, PSTR("anim"));
+
+  // Fetch a value from a key which is present
+  // clock animation length in seconds
+  if (ini.getValue(section, entry, buffer, bufferLen)) {
+    Serial.print(F("anim value: "));
+    Serial.println(buffer);
+    clockAnimationLength = atoi(buffer);
+  }
+  else {
+    printErrorMessage(ini.getError());
+    clockAnimationLength = 5;
+  }
+
+  if (ini.isOpen()) ini.close();
+  sd.chdir("/");
 }
 
 // These read 16- and 32-bit types from the SD card file.
@@ -1685,6 +1836,7 @@ uint32_t read32(SdFile& f) {
 }
 
 // available RAM checker
+
 void printFreeRAM()
 {
   Serial.print(F("FreeRam: "));
@@ -1700,7 +1852,7 @@ int freeRam () {
   return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval);
 }
 
-// Probably Random Number Generation
+// Random Number Generation ("probably_random")
 // https://gist.github.com/endolith/2568571
 // Rotate bits to the left
 // https://en.wikipedia.org/wiki/Circular_shift#Implementing_circular_shifts
