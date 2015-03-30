@@ -3,7 +3,7 @@
 #include <RTClite.h>
 #include <SdFat.h>
 #include <IniFileLite.h>
-#include <Adafruit_NeoPixel.h>
+#include <FastLED.h>
 
 /***************************************************
   BMP parsing code based on example sketch for the Adafruit 
@@ -20,17 +20,18 @@ SdFile myFile; // set filesystem
 
 #define BUFFPIXEL 1
 
-// In the SD card, place 24 bit color BMP files (be sure they are 24-bit!)
-// There are examples included
+//FasteLED
 
-// Parameter 1 = number of pixels in strip
-// Parameter 2 = pin number (most are valid)
-// Parameter 3 = pixel type flags, add together as needed:
-//   NEO_RGB     Pixels are wired for RGB bitstream
-//   NEO_GRB     Pixels are wired for GRB bitstream
-//   NEO_KHZ400  400 KHz bitstream (e.g. FLORA pixels)
-//   NEO_KHZ800  800 KHz bitstream (e.g. High Density LED strip)
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(256, 6, NEO_GRB + NEO_KHZ800);
+#define DATA_PIN    6
+#define NUM_LEDS    256
+#define LED_TYPE    WS2812
+#define COLOR_ORDER GRB
+
+struct CRGB leds[NUM_LEDS];
+// may not be needed
+CRGB oldcolor; //keeping track of pixels
+const CRGB black = CRGB::Black;
+
 
 //Random Number Generator
 byte sample = 0;
@@ -84,6 +85,7 @@ byte
   currentHour = 12,
   currentMinute = 0,
   currentSecond = 0;
+
 int
   secondCounter = 0, // counts up every second
   cycleTime = 30, // seconds to wait before progressing to next folder
@@ -98,17 +100,19 @@ int
   offsetX = 0, // for translating images x pixels
   offsetY = 0, // for translating images y pixels
   imageWidth = 0,
+  holdTime = 200, // millisecods to hold each .bmp frame
   imageHeight = 0;
+CRGB secondHandColor;
 unsigned long
-  secondHandColor = 0, // color grabbed from digits.bmp for second hand
+  //secondHandColor = 0, // color grabbed from digits.bmp for second hand
   lastTime = 0, // yep
   drawTime = 0, // debugging time to read from sd
-  holdTime = 200, // millisecods to hold each .bmp frame
   swapTime = 0, // system time to advance to next frame
   baseTime = 0, // system time logged at start of each new image sequence
   buttonTime = 0, // time the last button was pressed (debounce code)
   setupEndTime = 0, // pause animation while in setup mode
   setupEnterTime = 0; // time we enter setup
+
 char
   chainRootFolder[9], // chain game
   nextFolder[21] = "00system/logo"; // dictated next animation
@@ -154,15 +158,15 @@ void setup(void) {
   if (output >= 1 && output <= 8) cycleTimeSetting = output;
   setCycleTime();
 
-  strip.begin();
-  strip.show(); // Initialize all pixels to 'off'
-  strip.setBrightness(brightness * brightnessMultiplier);
+FastLED.addLeds<LED_TYPE,DATA_PIN,COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
+FastLED.clear();
+FastLED.setBrightness(brightness * brightnessMultiplier);
 
   // run burn in test if both buttons held on boot
   if ((digitalRead(buttonNextPin) == LOW) && (digitalRead(buttonSetupPin) == LOW))
   {
     // max brightness
-    strip.setBrightness(7 * brightnessMultiplier);
+    FastLED.setBrightness(7 * brightnessMultiplier);
     while (true)
     {
       testScreen();
@@ -173,7 +177,7 @@ void setup(void) {
   if (digitalRead(buttonSetupPin) == LOW)
   {
     brightness = 1;
-    strip.setBrightness(brightness * brightnessMultiplier);
+    FastLED.setBrightness(brightness * brightnessMultiplier);
     playMode = 0;
     cycleTimeSetting = 2;
     setCycleTime();
@@ -205,8 +209,8 @@ void setup(void) {
       Serial.println(F("---"));
       if (verboseOutput == true)
       {
-        strip.setPixelColor(numFolders, strip.Color(128, 255, 0));
-        strip.show();
+        leds[numFolders].setRGB(128, 255, 0);
+        FastLED.show();
       }
       numFolders++;
       Serial.print(F("File Index: "));
@@ -233,37 +237,29 @@ void setup(void) {
 
 void testScreen()
 {
+/*
+
   // white
-  for (int i=0; i<256; i++)
-  {
-    strip.setPixelColor(i, strip.Color(255, 255, 255));
-  }
-  strip.show();
-  delay(2000);
+    fill_solid(leds, NUM_LEDS, CRGB::White);
+  
+  FastLED.show();
+  delay(1000);
 
   // red
-  for (int i=0; i<256; i++)
-  {
-    strip.setPixelColor(i, strip.Color(255, 0, 0));
-  }
-  strip.show();
-  delay(2000);
+  fill_solid(leds, NUM_LEDS, CRGB::Red);
+  FastLED.show();
+  delay(1000);
 
   // green
-  for (int i=0; i<256; i++)
-  {
-    strip.setPixelColor(i, strip.Color(0, 255, 0));
-  }
-  strip.show();
-  delay(2000);
+  fill_solid(leds, NUM_LEDS, CRGB::Green);
+  FastLED.show();
+  delay(1000);
 
   // blue
-  for (int i=0; i<256; i++)
-  {
-    strip.setPixelColor(i, strip.Color(0, 0, 255));
-  }
-  strip.show();
+  fill_solid(leds, NUM_LEDS, CRGB::Blue);
+  FastLED.show();
   delay(2000);
+  */
 }
 
 void sdErrorMessage()
@@ -271,42 +267,42 @@ void sdErrorMessage()
   // red bars
   for (int index=64; index<80; index++)
   {
-    strip.setPixelColor(index, strip.Color(255, 0, 0));
+    leds[index] = CRGB::Red;
   }
   for (int index=80; index<192; index++)
   {
-    strip.setPixelColor(index, strip.Color(0, 0, 0));
+    leds[index] = CRGB::Black;
   }
   for (int index=192; index<208; index++)
   {
-    strip.setPixelColor(index, strip.Color(255, 0, 0));
+    leds[index] = CRGB::Red;
   }
   // S
-  yellowDot(7, 6);
-  yellowDot(6, 6);
-  yellowDot(5, 6);
-  yellowDot(4, 7);
-  yellowDot(5, 8);
-  yellowDot(6, 8);
-  yellowDot(7, 9);
-  yellowDot(6, 10);
-  yellowDot(5, 10);
-  yellowDot(4, 10);
+  drawDot(7, 6, CRGB::Yellow);
+  drawDot(6, 6, CRGB::Yellow);
+  drawDot(5, 6, CRGB::Yellow);
+  drawDot(4, 7, CRGB::Yellow);
+  drawDot(5, 8, CRGB::Yellow);
+  drawDot(6, 8, CRGB::Yellow);
+  drawDot(7, 9, CRGB::Yellow);
+  drawDot(6, 10, CRGB::Yellow);
+  drawDot(5, 10, CRGB::Yellow);
+  drawDot(4, 10, CRGB::Yellow);
 
   // D
-  yellowDot(9, 6);
-  yellowDot(10, 6);
-  yellowDot(11, 7);
-  yellowDot(11, 8);
-  yellowDot(11, 9);
-  yellowDot(10, 10);
-  yellowDot(9, 10);
-  yellowDot(9, 7);
-  yellowDot(9, 8);
-  yellowDot(9, 9);
+  drawDot(9, 6, CRGB::Yellow);
+  drawDot(10, 6, CRGB::Yellow);
+  drawDot(11, 7, CRGB::Yellow);
+  drawDot(11, 8, CRGB::Yellow);
+  drawDot(11, 9, CRGB::Yellow);
+  drawDot(10, 10, CRGB::Yellow);
+  drawDot(9, 10, CRGB::Yellow);
+  drawDot(9, 7, CRGB::Yellow);
+  drawDot(9, 8, CRGB::Yellow);
+  drawDot(9, 9, CRGB::Yellow);
 
-  strip.setBrightness(brightness * brightnessMultiplier);
-  strip.show();
+  FastLED.setBrightness(brightness * brightnessMultiplier);
+  FastLED.show();
   
   while (true)
   {
@@ -321,11 +317,12 @@ void sdErrorMessage()
       delay(1);
     }
   }
+  
 }
 
-void yellowDot(byte x, byte y)
+void drawDot(byte x, byte y, CRGB colour)
 {
-  strip.setPixelColor(getIndex(x, y), strip.Color(255, 255, 0));
+  leds[getIndex(x, y)] = colour;
 }
 
 void setCycleTime()
@@ -418,7 +415,7 @@ void mainLoop()
         itoa(brightness, brightChar, 10);
         strcat(brightFile, brightChar);
         strcat(brightFile, ".bmp");
-        strip.setBrightness(brightness * brightnessMultiplier);
+        FastLED.setBrightness(brightness * brightnessMultiplier);
         bmpDraw(brightFile, 0, 0);
       }
       
@@ -1128,28 +1125,28 @@ void bmpDraw(char *filename, uint8_t x, uint8_t y) {
             if (row >= bmpHeight - offsetY)
             {
               // black pixel
-              strip.setPixelColor(getIndex(col, row), strip.Color(0, 0, 0));
+              leds[getIndex(col, row)] = CRGB::Black;
             }
             // offsetY is negative
             else if (row < offsetY * -1)
             {
               // black pixel
-              strip.setPixelColor(getIndex(col, row), strip.Color(0, 0, 0));
+              leds[getIndex(col, row)] = CRGB::Black;
             }
             // offserX is beyond bmpWidth
             else if (col >= bmpWidth + offsetX)
             {
               // black pixel
-              strip.setPixelColor(getIndex(col, row), strip.Color(0, 0, 0));
+              leds[getIndex(col, row)] = CRGB::Black;
             }
             // offsetX is positive
             else if (col < offsetX)
             {
               // black pixel
-              strip.setPixelColor(getIndex(col, row), strip.Color(0, 0, 0));
+              leds[getIndex(col, row)] = CRGB::Black;
             }
             // all good
-            else strip.setPixelColor(getIndex(col+x, row), strip.Color(r, g, b));
+            else leds[getIndex(col+x, row)].setRGB(r, g, b);
             // paint pixel color
           } // end pixel
         } // end scanline
@@ -1158,8 +1155,8 @@ void bmpDraw(char *filename, uint8_t x, uint8_t y) {
   }
   if (!clockShown)
   {
-    strip.show();
-    // NOTE: strip.show() halts all interrupts, including the system clock.
+    FastLED.show();
+    // NOTE: .show() halts all interrupts, including the system clock.
     // Each call results in about 6825 microseconds lost to the void.
   }
   if (singleGraphic == false || setupActive == true)
@@ -1190,10 +1187,7 @@ byte getIndex(byte x, byte y)
 
 void clearStripBuffer()
 {
-  for (int i=0; i<256; i++)
-  {
-    strip.setPixelColor(i, strip.Color(0, 0, 0));
-  }
+  fill_solid(leds, NUM_LEDS, CRGB::Black);
 }
 
 void buttonDebounce()
@@ -1272,7 +1266,7 @@ void initClock()
   if (!enableSecondHand)
   {
     drawDigits();
-    strip.show();
+    FastLED.show();
   }
 }
 
@@ -1294,7 +1288,7 @@ void setClockHour()
   while (clockDigitSet == false)
   {
     drawDigits();
-    strip.show();
+    FastLED.show();
     buttonDebounce();
 
     // setup button
@@ -1325,7 +1319,7 @@ void setClockMinute()
   while (clockDigitSet == true)
   {
     drawDigits();
-    strip.show();
+    FastLED.show();
     buttonDebounce();
 
     // setup button
@@ -1384,13 +1378,13 @@ void showClock()
       storeSecondHandColor();
       drawDigits();
       secondHand();
-      strip.show();
+      FastLED.show();
     }
     // second hand disabled, so only draw time on new minute
     else if (currentSecond == 0)
     {
       drawDigits();
-      strip.show();
+      FastLED.show();
     }
 
     // show an animation
@@ -1431,11 +1425,11 @@ void storeSecondHandColor()
   offsetY = 176;
   strcpy_P(nextFolder, PSTR("/00system/digits.bmp"));
   // max brightness in order to store correct color value
-  strip.setBrightness(255);
+  FastLED.setBrightness(255);
   bmpDraw(nextFolder, 0, 0);
-  secondHandColor = strip.getPixelColor(getIndex(secondHandX, secondHandY));
+  secondHandColor = leds[getIndex(secondHandX, secondHandY)];
   // restore brightness
-  strip.setBrightness(brightness * brightnessMultiplier);
+  FastLED.setBrightness(brightness * brightnessMultiplier);
 }
 
 void clockDigit_1()
@@ -1542,7 +1536,7 @@ void getSecondHandIndex()
 void secondHand()
 {
   getSecondHandIndex();
-  strip.setPixelColor(getIndex(secondHandX, secondHandY), secondHandColor);
+  leds[getIndex(secondHandX, secondHandY)] = secondHandColor;
 }
 
 // .INI file support
