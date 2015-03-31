@@ -6,7 +6,7 @@
 #include <FastLED.h>
 
 /***************************************************
-  BMP parsing code based on example sketch for the Adafruit 
+  BMP parsing code based on example sketch for the Adafruit
   1.8" SPI display library by Adafruit.
   http://www.adafruit.com/products/358
 
@@ -50,72 +50,72 @@ const boolean debugMode = false;
 
 //System Setup
 boolean
-  logoPlayed = false, // plays logo animation correctly reardless of playMode
-  folderLoop = true, // animation looping
-  moveLoop = false, // translation/pan looping
-  buttonPressed = false, // control button check
-  buttonEnabled = true, // debounce guard
-  setupActive = false, // showing menus (set brightness, playback mode, etc.)
-  panoff = true, // movement scrolls off screen
-  singleGraphic = false, // single BMP file
-  abortImage = false, // image is corrupt; abort, retry, fail?
-  verboseOutput = false, // output extra info to LEDs
-  statusLedState = false, // flicker tech
-  clockShown = false, // clock mode?
-  clockSet = false, // have we set the time?
-  clockSetBlink = false, // flicker digit
-  clockDigitSet = false, // is hours/minutes set?
-  enableSecondHand = true,
-  clockAnimationActive = false, // currently showing clock anim
-  hour12 = true; // 12-hour clock?
+logoPlayed = false, // plays logo animation correctly reardless of playMode
+folderLoop = true, // animation looping
+moveLoop = false, // translation/pan looping
+buttonPressed = false, // control button check
+buttonEnabled = true, // debounce guard
+setupActive = false, // showing menus (set brightness, playback mode, etc.)
+panoff = true, // movement scrolls off screen
+singleGraphic = false, // single BMP file
+abortImage = false, // image is corrupt; abort, retry, fail?
+verboseOutput = false, // output extra info to LEDs
+statusLedState = false, // flicker tech
+clockShown = false, // clock mode?
+clockSet = false, // have we set the time?
+clockSetBlink = false, // flicker digit
+clockDigitSet = false, // is hours/minutes set?
+enableSecondHand = true,
+clockAnimationActive = false, // currently showing clock anim
+hour12 = true; // 12-hour clock?
 byte
-  playMode = 0, // 0 = sequential, 1 = random, 2 = pause animations
-  gameMode = 1, // breakout, ???
-  brightness = 4, // LED brightness
-  brightnessMultiplier = 10, // DO NOT CHANGE THIS
-  cycleTimeSetting = 2, // time before next animation: 1=10 secs, 2=30 secs, 3=1 min... 8=infinity
-  fpShield = 0, // button false positive shield
-  setupMode = 0, // 0 = brightmess, 1 = play mode, 2 = cycle time
-  lowestMem = 250, // storage for lowest number of available bytes
-  clockAnimationLength = 5, // seconds to play clock animations
-  secondHandX = 0,
-  secondHandY = 0,
-  secondOffset = 0,
-  lastSecond = 255, // a moment ago
-  currentHour = 12,
-  currentMinute = 0,
-  currentSecond = 0;
+playMode = 0, // 0 = sequential, 1 = random, 2 = pause animations
+gameMode = 1, // breakout, ???
+brightness = 4, // LED brightness
+brightnessMultiplier = 10, // DO NOT CHANGE THIS
+cycleTimeSetting = 2, // time before next animation: 1=10 secs, 2=30 secs, 3=1 min... 8=infinity
+fpShield = 0, // button false positive shield
+setupMode = 0, // 0 = brightmess, 1 = play mode, 2 = cycle time
+lowestMem = 250, // storage for lowest number of available bytes
+clockAnimationLength = 5, // seconds to play clock animations
+secondHandX = 0,
+secondHandY = 0,
+secondOffset = 0,
+lastSecond = 255, // a moment ago
+currentHour = 12,
+currentMinute = 0,
+currentSecond = 0;
 
 int
-  secondCounter = 0, // counts up every second
-  cycleTime = 30, // seconds to wait before progressing to next folder
-  numFolders = 0, // number of folders on sd
-  folderIndex = 0, // current folder
-  chainIndex = -1, // for chaining multiple folders
-  fileIndex = 0, // current frame
-  offsetBufferX = 0, // for storing offset when entering menu
-  offsetBufferY = 0, // for storing offset when entering menu
-  offsetSpeedX = 0, // number of pixels to translate each frame
-  offsetSpeedY = 0, // number of pixels to translate each frame
-  offsetX = 0, // for translating images x pixels
-  offsetY = 0, // for translating images y pixels
-  imageWidth = 0,
-  holdTime = 200, // millisecods to hold each .bmp frame
-  imageHeight = 0;
+secondCounter = 0, // counts up every second
+cycleTime = 30, // seconds to wait before progressing to next folder
+numFolders = 0, // number of folders on sd
+folderIndex = 0, // current folder
+chainIndex = -1, // for chaining multiple folders
+fileIndex = 0, // current frame
+offsetBufferX = 0, // for storing offset when entering menu
+offsetBufferY = 0, // for storing offset when entering menu
+offsetSpeedX = 0, // number of pixels to translate each frame
+offsetSpeedY = 0, // number of pixels to translate each frame
+offsetX = 0, // for translating images x pixels
+offsetY = 0, // for translating images y pixels
+imageWidth = 0,
+holdTime = 200, // millisecods to hold each .bmp frame
+imageHeight = 0;
 CRGB secondHandColor;
 unsigned long
-  //secondHandColor = 0, // color grabbed from digits.bmp for second hand
-  lastTime = 0, // yep
-  drawTime = 0, // debugging time to read from sd
-  swapTime = 0, // system time to advance to next frame
-  baseTime = 0, // system time logged at start of each new image sequence
-  buttonTime = 0, // time the last button was pressed (debounce code)
-  setupEndTime = 0, // pause animation while in setup mode
-  setupEnterTime = 0; // time we enter setup
+//secondHandColor = 0, // color grabbed from digits.bmp for second hand
+lastTime = 0, // yep
+drawTime = 0, // debugging time to read from sd
+swapTime = 0, // system time to advance to next frame
+baseTime = 0, // system time logged at start of each new image sequence
+buttonTime = 0, // time the last button was pressed (debounce code)
+setupEndTime = 0, // pause animation while in setup mode
+setupEnterTime = 0; // time we enter setup
 
 char
-  chainRootFolder[9], // chain game
-  nextFolder[21] = "00system/logo"; // dictated next animation
+chainRootFolder[9], // chain game
+                nextFolder[21] = "00system/logo"; // dictated next animation
 
 RTC_DS1307 rtc;
 DateTime now;
@@ -126,18 +126,18 @@ void setup(void) {
   analogWrite(STATUS_LED, 100);
 
   wdtSetup();
-  
+
   pinMode(buttonNextPin, INPUT);    // button as input
   pinMode(buttonSetupPin, INPUT);    // button as input
   digitalWrite(buttonNextPin, HIGH); // turns on pull-up resistor after input
   digitalWrite(buttonSetupPin, HIGH); // turns on pull-up resistor after input
-  
+
   if (debugMode == true)
   {
     Serial.begin(57600);
     printFreeRAM();
   }
-  
+
   // init clock and begin counting seconds
   rtc.begin();
   adjustClock();
@@ -148,7 +148,7 @@ void setup(void) {
   // read brightness setting from EEPROM
   output = EEPROM.read(0);
   if (output >= 1 && output <= 7) brightness = output;
-  
+
   // read playMode setting from EEPROM
   output = EEPROM.read(1);
   if (output >= 0 && output <= 2) playMode = output;
@@ -158,9 +158,9 @@ void setup(void) {
   if (output >= 1 && output <= 8) cycleTimeSetting = output;
   setCycleTime();
 
-FastLED.addLeds<LED_TYPE,DATA_PIN,COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
-FastLED.clear();
-FastLED.setBrightness(brightness * brightnessMultiplier);
+  FastLED.addLeds<LED_TYPE, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
+  FastLED.clear();
+  FastLED.setBrightness(brightness * brightnessMultiplier);
 
   // run burn in test if both buttons held on boot
   if ((digitalRead(buttonNextPin) == LOW) && (digitalRead(buttonSetupPin) == LOW))
@@ -182,7 +182,7 @@ FastLED.setBrightness(brightness * brightnessMultiplier);
     cycleTimeSetting = 2;
     setCycleTime();
   }
-  
+
   // show test screens and folder count if next button held on boot
   if (digitalRead(buttonNextPin) == LOW)
   {
@@ -200,9 +200,9 @@ FastLED.setBrightness(brightness * brightnessMultiplier);
   Serial.println(F("OK!"));
 
   char folder[9];
-  
+
   // file indexes appear to loop after 2048
-  for (int fileIndex=0; fileIndex<2048; fileIndex++)
+  for (int fileIndex = 0; fileIndex < 2048; fileIndex++)
   {
     myFile.open(sd.vwd(), fileIndex, O_READ);
     if (myFile.isDir()) {
@@ -228,7 +228,7 @@ FastLED.setBrightness(brightness * brightnessMultiplier);
   {
     delay(5000);
   }
-  
+
   // play logo animation
   sd.chdir(nextFolder);
   readIniFile();
@@ -237,43 +237,43 @@ FastLED.setBrightness(brightness * brightnessMultiplier);
 
 void testScreen()
 {
-/*
+  /*
 
-  // white
-    fill_solid(leds, NUM_LEDS, CRGB::White);
-  
-  FastLED.show();
-  delay(1000);
+    // white
+      fill_solid(leds, NUM_LEDS, CRGB::White);
 
-  // red
-  fill_solid(leds, NUM_LEDS, CRGB::Red);
-  FastLED.show();
-  delay(1000);
+    FastLED.show();
+    delay(1000);
 
-  // green
-  fill_solid(leds, NUM_LEDS, CRGB::Green);
-  FastLED.show();
-  delay(1000);
+    // red
+    fill_solid(leds, NUM_LEDS, CRGB::Red);
+    FastLED.show();
+    delay(1000);
 
-  // blue
-  fill_solid(leds, NUM_LEDS, CRGB::Blue);
-  FastLED.show();
-  delay(2000);
-  */
+    // green
+    fill_solid(leds, NUM_LEDS, CRGB::Green);
+    FastLED.show();
+    delay(1000);
+
+    // blue
+    fill_solid(leds, NUM_LEDS, CRGB::Blue);
+    FastLED.show();
+    delay(2000);
+    */
 }
 
 void sdErrorMessage()
 {
   // red bars
-  for (int index=64; index<80; index++)
+  for (int index = 64; index < 80; index++)
   {
     leds[index] = CRGB::Red;
   }
-  for (int index=80; index<192; index++)
+  for (int index = 80; index < 192; index++)
   {
     leds[index] = CRGB::Black;
   }
-  for (int index=192; index<208; index++)
+  for (int index = 192; index < 208; index++)
   {
     leds[index] = CRGB::Red;
   }
@@ -303,21 +303,21 @@ void sdErrorMessage()
 
   FastLED.setBrightness(brightness * brightnessMultiplier);
   FastLED.show();
-  
+
   while (true)
   {
-    for (int i=255; i>=0; i--)
+    for (int i = 255; i >= 0; i--)
     {
       analogWrite(STATUS_LED, i);
       delay(1);
     }
-    for (int i=0; i<=254; i++)
+    for (int i = 0; i <= 254; i++)
     {
       analogWrite(STATUS_LED, i);
       delay(1);
     }
   }
-  
+
 }
 
 void drawDot(byte x, byte y, CRGB colour)
@@ -376,7 +376,7 @@ void statusLedFlicker()
 }
 
 void loop() {
-    mainLoop();
+  mainLoop();
 }
 
 void mainLoop()
@@ -418,7 +418,7 @@ void mainLoop()
         FastLED.setBrightness(brightness * brightnessMultiplier);
         bmpDraw(brightFile, 0, 0);
       }
-      
+
       // adjust play mode
       else if (setupMode == 1)
       {
@@ -455,7 +455,7 @@ void mainLoop()
       }
     }
   }
-  
+
   // reset clock
   if (digitalRead(buttonNextPin) == LOW && buttonPressed == false && buttonEnabled == true && clockShown)
   {
@@ -471,7 +471,7 @@ void mainLoop()
   {
     buttonPressed = true;
     setupEndTime = millis() + 3000;
-    
+
     if (setupActive == false)
     {
       setupActive = true;
@@ -539,7 +539,7 @@ void mainLoop()
     if (millis() > setupEndTime)
     {
       setupActive = false;
-      
+
       // save any new settings to EEPROM
       if (EEPROM.read(0) != brightness)
       {
@@ -553,7 +553,7 @@ void mainLoop()
       {
         EEPROM.write(2, cycleTimeSetting);
       }
-      
+
       // return to brightness setup next time
       setupMode = 0;
 
@@ -572,7 +572,7 @@ void mainLoop()
       }
     }
   }
-  
+
   // currently playing images?
   if (setupActive == false)
   {
@@ -589,7 +589,7 @@ void mainLoop()
           initClock();
         }
       }
-  
+
       // did image load fail?
       if (abortImage == true && clockShown == false)
       {
@@ -597,7 +597,7 @@ void mainLoop()
         nextImage();
         drawFrame();
       }
-  
+
       // progress to next folder if cycleTime is up
       // check for infinite mode
       else if (cycleTimeSetting != 8  && clockShown == false && clockAnimationActive == false)
@@ -608,7 +608,7 @@ void mainLoop()
           drawFrame();
         }
       }
-  
+
       // animate if not a single-frame & animations are on
       if (holdTime != -1 && playMode != 2 || logoPlayed == false)
       {
@@ -621,7 +621,7 @@ void mainLoop()
         }
       }
     }
-  
+
     // show clock
     else if (clockShown == true && clockAnimationActive == false)
     {
@@ -647,7 +647,7 @@ void nextImage()
   offsetY = 0;
   singleGraphic = false;
   if (!logoPlayed) logoPlayed = true;
-  
+
   // are we chaining folders?
   if (chainIndex > -1)
   {
@@ -689,7 +689,7 @@ void nextImage()
       Serial.println(F("Not exists!"));
     }
   }
-  
+
   // next folder not assigned by .INI
   if (nextFolder[0] == '\0' && chainIndex == -1)
   {
@@ -702,28 +702,28 @@ void nextImage()
       {
         randomResult = rotl(randomResult, 1); // Spread randomness around
         randomResult ^= sample; // XOR preserves randomness
-     
+
         current_bit++;
         if (current_bit > 7)
         {
           current_bit = 0;
         }
-        
+
         while (randomResult > numFolders)
         {
           randomResult = randomResult - numFolders;
         }
       }
-  
+
       int targetFolder = randomResult;
-      
+
       // don't repeat the same image, please.
       if (targetFolder <= 0 or targetFolder == numFolders or targetFolder == numFolders - 1)
       {
         // Repeat image detected! Incrementing targetFolder.
         targetFolder = targetFolder + 2;
       }
-  
+
       Serial.print(F("Randomly advancing "));
       Serial.print(targetFolder);
       Serial.println(F(" folder(s)."));
@@ -743,14 +743,14 @@ void nextImage()
         }
       }
     }
-  
+
     foundNewFolder = false;
-  
+
     while (foundNewFolder == false)
     {
       myFile.open(sd.vwd(), folderIndex, O_READ);
       myFile.getFilename(folder);
-      
+
       // ignore system folders that start with "00"
       if (myFile.isDir() && folder[0] != 48 && folder[1] != 48) {
         foundNewFolder = true;
@@ -758,7 +758,7 @@ void nextImage()
         Serial.println(folderIndex);
         Serial.print(F("Opening Folder: "));
         Serial.println(folder);
-  
+
         sd.chdir(folder);
         myFile.close();
       }
@@ -766,7 +766,7 @@ void nextImage()
       folderIndex++;
     }
   }
-  
+
   // is this the start of a folder chain?
   char chainDir[2];
   strcpy_P(chainDir, PSTR("0"));
@@ -778,7 +778,7 @@ void nextImage()
     sd.chdir(chainDir);
     chainIndex = 1;
   }
-  
+
   char firstImage[6];
   strcpy_P(firstImage, PSTR("0.bmp"));
   if (sd.exists(firstImage))
@@ -787,15 +787,15 @@ void nextImage()
     Serial.print(folder);
     Serial.println(F("/config.ini"));
     readIniFile();
-  
+
     char tmp[6];
     strcpy_P(tmp, PSTR("0.bmp"));
     refreshImageDimensions(tmp);
-    
+
     Serial.print(F("Hold (in ms): "));
     Serial.println(holdTime);
     swapTime = millis() + holdTime;
-    
+
     // setup image for x/y translation as needed if animations aren't paused
     if (playMode != 2)
     {
@@ -826,9 +826,9 @@ void nextImage()
       offsetX = imageWidth / -2 + 8;
       offsetY = imageHeight / 2 - 8;
     }
-    
+
     // test for single frame
-    
+
     char tmp_0[6];
     char tmp_1[6];
     strcpy_P(tmp_0, PSTR("0.bmp"));
@@ -844,7 +844,7 @@ void nextImage()
       }
     }
   }
-  
+
   // empty folder
   else
   {
@@ -852,7 +852,7 @@ void nextImage()
     nextImage();
   }
 
-  // for some reason, leaving this in keeps the code from crashing. 
+  // for some reason, leaving this in keeps the code from crashing.
   // It MUST be stored PSTR. Bad Flash bytes?
   char antiCrash[9];
   strcpy_P(antiCrash, PSTR("c"));
@@ -925,7 +925,7 @@ void drawFrame()
     char bmpFile[8]; // 3-digit number + .bmp + null byte
     itoa(fileIndex, bmpFile, 10);
     strcat(bmpFile, ".bmp");
-    if (!sd.exists(bmpFile)) 
+    if (!sd.exists(bmpFile))
     {
       fileIndex = 0;
       itoa(fileIndex, bmpFile, 10);
@@ -956,13 +956,13 @@ void refreshImageDimensions(char *filename) {
   const uint8_t  gridWidth = 16;
   const uint8_t  gridHeight = 16;
 
-  if((0 >= gridWidth) || (0 >= gridHeight)) {
+  if ((0 >= gridWidth) || (0 >= gridHeight)) {
     Serial.print(F("Abort."));
     return;
   }
-  
+
   // storing dimentions for image
-  
+
   // Open requested file on SD card
   if (!myFile.open(filename, O_READ)) {
     Serial.println(F("File open failed"));
@@ -971,7 +971,7 @@ void refreshImageDimensions(char *filename) {
   }
 
   // Parse BMP header
-  if(read16(myFile) == 0x4D42) { // BMP signature
+  if (read16(myFile) == 0x4D42) { // BMP signature
     (void)read32(myFile); // Read & ignore file size
     (void)read32(myFile); // Read & ignore creator bytes
     (void)read32(myFile); // skip data
@@ -1002,7 +1002,7 @@ void bmpDraw(char *filename, uint8_t x, uint8_t y) {
   uint8_t  bmpDepth;              // Bit depth (currently must be 24)
   uint32_t bmpImageoffset;        // Start of image data in file
   uint32_t  rowSize;               // Not always = bmpWidth; may have padding
-  uint8_t  sdbuffer[3*BUFFPIXEL]; // pixel buffer (R+G+B per pixel)
+  uint8_t  sdbuffer[3 * BUFFPIXEL]; // pixel buffer (R+G+B per pixel)
   uint8_t  buffidx = sizeof(sdbuffer); // Current position in sdbuffer
   boolean  goodBmp = false;       // Set to true on valid header parse
   boolean  flip    = true;        // BMP is stored bottom-to-top
@@ -1012,13 +1012,13 @@ void bmpDraw(char *filename, uint8_t x, uint8_t y) {
   const uint8_t  gridWidth = 16;
   const uint8_t  gridHeight = 16;
 
-  if((x >= gridWidth) || (y >= gridHeight)) {
+  if ((x >= gridWidth) || (y >= gridHeight)) {
     Serial.print(F("Abort."));
     return;
   }
-  
+
   Serial.println();
-  
+
   if (!myFile.isOpen())
   {
     Serial.print(F("Loading image '"));
@@ -1032,14 +1032,14 @@ void bmpDraw(char *filename, uint8_t x, uint8_t y) {
     }
   }
   else myFile.rewind();
-  
+
   if (debugMode == true)
   {
     printFreeRAM();
   }
 
   // Parse BMP header
-  if(read16(myFile) == 0x4D42) { // BMP signature
+  if (read16(myFile) == 0x4D42) { // BMP signature
     Serial.print(F("File size: ")); Serial.println(read32(myFile));
     (void)read32(myFile); // Read & ignore creator bytes
     bmpImageoffset = read32(myFile); // Start of image data
@@ -1048,10 +1048,10 @@ void bmpDraw(char *filename, uint8_t x, uint8_t y) {
     Serial.print(F("Header size: ")); Serial.println(read32(myFile));
     bmpWidth  = read32(myFile);
     bmpHeight = read32(myFile);
-    if(read16(myFile) == 1) { // # planes -- must be '1'
+    if (read16(myFile) == 1) { // # planes -- must be '1'
       bmpDepth = read16(myFile); // bits per pixel
       Serial.print(F("Bit Depth: ")); Serial.println(bmpDepth);
-      if((bmpDepth == 24) && (read32(myFile) == 0)) { // 0 = uncompressed
+      if ((bmpDepth == 24) && (read32(myFile) == 0)) { // 0 = uncompressed
 
         goodBmp = true; // Supported BMP format -- proceed!
         Serial.print(F("Image size: "));
@@ -1077,21 +1077,21 @@ void bmpDraw(char *filename, uint8_t x, uint8_t y) {
 
         // If bmpHeight is negative, image is in top-down order.
         // This is not canon but has been observed in the wild.
-        if(bmpHeight < 0) {
+        if (bmpHeight < 0) {
           bmpHeight = -bmpHeight;
           flip      = false;
         }
-        
+
         // initialize our pixel index
         byte index = 0; // a byte is perfect for a 16x16 grid
 
         // Crop area to be loaded
         w = bmpWidth;
         h = bmpHeight;
-        if((x+w-1) >= gridWidth)  w = gridWidth - x;
-        if((y+h-1) >= gridHeight) h = gridHeight - y;
+        if ((x + w - 1) >= gridWidth)  w = gridWidth - x;
+        if ((y + h - 1) >= gridHeight) h = gridHeight - y;
 
-        for (row=0; row<h; row++) { // For each scanline...
+        for (row = 0; row < h; row++) { // For each scanline...
 
           // Seek to start of scan line.  It might seem labor-
           // intensive to be doing this on every line, but this
@@ -1099,24 +1099,24 @@ void bmpDraw(char *filename, uint8_t x, uint8_t y) {
           // and scanline padding.  Also, the seek only takes
           // place if the file position actually needs to change
           // (avoids a lot of cluster math in SD library).
-          
-          if(flip) // Bitmap is stored bottom-to-top order (normal BMP)
+
+          if (flip) // Bitmap is stored bottom-to-top order (normal BMP)
             pos = (bmpImageoffset + (offsetX * -3) + (bmpHeight - 1 - (row + offsetY)) * rowSize);
           else     // Bitmap is stored top-to-bottom
             pos = bmpImageoffset + row * rowSize;
-          if(myFile.curPosition() != pos) { // Need seek?
+          if (myFile.curPosition() != pos) { // Need seek?
             myFile.seekSet(pos);
             buffidx = sizeof(sdbuffer); // Force buffer reload
           }
-          
-          for (col=0; col<w; col++) { // For each pixel...
+
+          for (col = 0; col < w; col++) { // For each pixel...
             // Time to read more pixel data?
             if (buffidx >= sizeof(sdbuffer)) { // Indeed
               myFile.read(sdbuffer, sizeof(sdbuffer));
               buffidx = 0; // Set index to beginning
             }
 
-            // push to LED buffer 
+            // push to LED buffer
             b = sdbuffer[buffidx++];
             g = sdbuffer[buffidx++];
             r = sdbuffer[buffidx++];
@@ -1146,7 +1146,7 @@ void bmpDraw(char *filename, uint8_t x, uint8_t y) {
               leds[getIndex(col, row)] = CRGB::Black;
             }
             // all good
-            else leds[getIndex(col+x, row)].setRGB(r, g, b);
+            else leds[getIndex(col + x, row)].setRGB(r, g, b);
             // paint pixel color
           } // end pixel
         } // end scanline
@@ -1164,7 +1164,7 @@ void bmpDraw(char *filename, uint8_t x, uint8_t y) {
     Serial.println(F("Closing Image..."));
     myFile.close();
   }
-  if(!goodBmp) Serial.println(F("Format unrecognized"));
+  if (!goodBmp) Serial.println(F("Format unrecognized"));
 }
 
 byte getIndex(byte x, byte y)
@@ -1220,7 +1220,7 @@ void printDigits(int digits)
 {
   // utility function for clock display: prints preceding colon and leading 0
   Serial.print(":");
-  if(digits < 10)
+  if (digits < 10)
     Serial.print('0');
   Serial.print(digits);
 }
@@ -1239,7 +1239,7 @@ void initClock()
   {
     EEPROM.write(2, cycleTimeSetting);
   }
-  
+
   secondCounter = 0;
   setupActive = false;
   clockShown = true;
@@ -1247,14 +1247,14 @@ void initClock()
   buttonTime = millis();
   setupMode = 0;
   lastSecond = 255;
-  
+
   if (myFile.isOpen()) myFile.close();
   holdTime = 0;
   sd.chdir("/");
   fileIndex = 0;
   singleGraphic = true;
   if (!logoPlayed) logoPlayed = true;
-  
+
   readClockIni();
 
   if (!clockSet)
@@ -1312,7 +1312,7 @@ void setClockHour()
     }
   }
 }
-  
+
 void setClockMinute()
 {
   // set minutes
@@ -1544,36 +1544,36 @@ void secondHand()
 void printErrorMessage(uint8_t e, bool eol = true)
 {
   switch (e) {
-  case IniFile::errorNoError:
-    Serial.print(F("no error"));
-    break;
-  case IniFile::errorFileNotFound:
-    Serial.print(F("fnf"));
-    break;
-  case IniFile::errorFileNotOpen:
-    Serial.print(F("fno"));
-    break;
-  case IniFile::errorBufferTooSmall:
-    Serial.print(F("bts"));
-    break;
-  case IniFile::errorSeekError:
-    Serial.print(F("se"));
-    break;
-  case IniFile::errorSectionNotFound:
-    Serial.print(F("snf"));
-    break;
-  case IniFile::errorKeyNotFound:
-    Serial.print(F("knf"));
-    break;
-  case IniFile::errorEndOfFile:
-    Serial.print(F("eof"));
-    break;
-  case IniFile::errorUnknownError:
-    Serial.print(F("unknown"));
-    break;
-  default:
-    Serial.print(F("unknown error value"));
-    break;
+    case IniFile::errorNoError:
+      Serial.print(F("no error"));
+      break;
+    case IniFile::errorFileNotFound:
+      Serial.print(F("fnf"));
+      break;
+    case IniFile::errorFileNotOpen:
+      Serial.print(F("fno"));
+      break;
+    case IniFile::errorBufferTooSmall:
+      Serial.print(F("bts"));
+      break;
+    case IniFile::errorSeekError:
+      Serial.print(F("se"));
+      break;
+    case IniFile::errorSectionNotFound:
+      Serial.print(F("snf"));
+      break;
+    case IniFile::errorKeyNotFound:
+      Serial.print(F("knf"));
+      break;
+    case IniFile::errorEndOfFile:
+      Serial.print(F("eof"));
+      break;
+    case IniFile::errorUnknownError:
+      Serial.print(F("unknown"));
+      break;
+    default:
+      Serial.print(F("unknown error value"));
+      break;
   }
   if (eol)
     Serial.println();
@@ -1621,7 +1621,7 @@ void readIniFile()
     printErrorMessage(ini.getError());
     holdTime = 200;
   }
-  
+
   strcpy_P(entry, PSTR("loop"));
 
   // Fetch a boolean value
@@ -1637,7 +1637,7 @@ void readIniFile()
     printErrorMessage(ini.getError());
     folderLoop = true;
   }
-  
+
   strcpy_P(section, PSTR("translate"));
   strcpy_P(entry, PSTR("moveX"));
 
@@ -1651,7 +1651,7 @@ void readIniFile()
     printErrorMessage(ini.getError());
     offsetSpeedX = 0;
   }
-  
+
   strcpy_P(entry, PSTR("moveY"));
 
   // Fetch a value from a key which is present
@@ -1664,7 +1664,7 @@ void readIniFile()
     printErrorMessage(ini.getError());
     offsetSpeedY = 0;
   }
-  
+
   strcpy_P(entry, PSTR("loop"));
 
   // Fetch a boolean value
@@ -1709,7 +1709,7 @@ void readIniFile()
     printErrorMessage(ini.getError());
     nextFolder[0] = '\0';
   }
-  
+
   if (ini.isOpen()) ini.close();
 }
 
@@ -1760,7 +1760,7 @@ void readClockIni()
     printErrorMessage(ini.getError());
     hour12 = true;
   }
-  
+
   strcpy_P(entry, PSTR("second"));
 
   // Fetch a boolean value
@@ -1776,7 +1776,7 @@ void readClockIni()
     printErrorMessage(ini.getError());
     enableSecondHand = true;
   }
-  
+
   strcpy_P(entry, PSTR("offset"));
 
   // Fetch a value from a key which is present
@@ -1841,8 +1841,8 @@ void printFreeRAM()
 }
 
 int freeRam () {
-  extern int __heap_start, *__brkval; 
-  int v; 
+  extern int __heap_start, *__brkval;
+  int v;
   return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval);
 }
 
@@ -1851,26 +1851,26 @@ int freeRam () {
 // Rotate bits to the left
 // https://en.wikipedia.org/wiki/Circular_shift#Implementing_circular_shifts
 byte rotl(const byte value, int shift) {
-  if ((shift &= sizeof(value)*8 - 1) == 0)
+  if ((shift &= sizeof(value) * 8 - 1) == 0)
     return value;
-  return (value << shift) | (value >> (sizeof(value)*8 - shift));
+  return (value << shift) | (value >> (sizeof(value) * 8 - shift));
 }
- 
+
 // Setup of the watchdog timer.
 void wdtSetup() {
   cli();
   MCUSR = 0;
-  
+
   /* Start timed sequence */
   WDTCSR |= _BV(WDCE) | _BV(WDE);
- 
+
   /* Put WDT into interrupt mode */
   /* Set shortest prescaler(time-out) value = 2048 cycles (~16 ms) */
   WDTCSR = _BV(WDIE);
- 
+
   sei();
 }
- 
+
 // Watchdog Timer Interrupt Service Routine
 ISR(WDT_vect)
 {
