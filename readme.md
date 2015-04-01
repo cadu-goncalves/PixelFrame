@@ -1,8 +1,8 @@
-Game Frame Source
+pixelFrame
 ==================
 This Arduino source code is forked from Game Frame (https://github.com/jerware), a pixel display available from LEDSEQ.COM.
 
-The target is a blank AtMega328 IC.
+The target is a blank AtMega328 IC with Arduino compatible bootloader.
 16x16 pixel 24bit bitmap (BMP) images stored on an SD Card, are displayed on the matrix.
 
 It compiles under Arduino 1.0.6 and 1.5.8, and requires the following libraries:
