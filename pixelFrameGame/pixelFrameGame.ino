@@ -81,7 +81,7 @@ byte
   ballY = 208,
   ballIndex = 216,
   currentSecond = 255; // current second
-int
+int8_t
   secondCounter = 0, // counts up every second
   cycleTime = 30, // seconds to wait before progressing to next folder
   numFolders = 0, // number of folders on sd
@@ -196,7 +196,7 @@ void setup(void) {
   char folder[9];
   
   // file indexes appear to loop after 2048
-  for (int fileIndex=0; fileIndex<2048; fileIndex++)
+  for (int8_t fileIndex=0; fileIndex<2048; fileIndex++)
   {
     myFile.open(sd.vwd(), fileIndex, O_READ);
     if (myFile.isDir()) {
@@ -255,18 +255,16 @@ void testScreen()
 
 void sdErrorMessage()
 {
- /*
- 
-  // red bars
-  for (int index=64; index<80; index++)
+   // red bars
+  for (uint8_t index=64; index<80; index++)
   {
     leds[index] = CRGB::Red;
   }
-  for (int index=80; index<192; index++)
+  for (uint8_t index=80; index<192; index++)
   {
     leds[index] = CRGB::Black;
   }
-  for (int index=192; index<208; index++)
+  for (uint8_t index=192; index<208; index++)
   {
     leds[index] = CRGB::Red;
   }
@@ -299,27 +297,26 @@ void sdErrorMessage()
   
   while (true)
   {
-    for (int i=255; i>=0; i--)
+    for (uint8_t i=255; i>=0; i--)
     {
       analogWrite(STATUS_LED, i);
       delay(1);
     }
-    for (int i=0; i<=254; i++)
+    for (uint8_t i=0; i<=254; i++)
     {
       analogWrite(STATUS_LED, i);
       delay(1);
     }
   }
   
-  */
+  
 }
 
-/*
+
 void yellowDot(byte x, byte y)
 {
   leds[getIndex(x, y)].setRGB(255, 255, 0);
 }
-*/
 
 void setCycleTime()
 {
@@ -732,7 +729,7 @@ void nextImage()
         }
       }
   
-      int targetFolder = randomResult;
+      int8_t targetFolder = randomResult;
       
       // don't repeat the same image, please.
       if (targetFolder <= 0 or targetFolder == numFolders or targetFolder == numFolders - 1)
@@ -744,7 +741,7 @@ void nextImage()
       Serial.print(F("Randomly advancing "));
       Serial.print(targetFolder);
       Serial.println(F(" folder(s)."));
-      int i = 1;
+      int8_t i = 1;
       while (i < targetFolder)
       {
         foundNewFolder = false;
@@ -1010,7 +1007,7 @@ void refreshImageDimensions(char *filename) {
 
 void bmpDraw(const char *filename, uint8_t x, uint8_t y) {
 
-  int  bmpWidth, bmpHeight;   // W+H in pixels
+  int8_t  bmpWidth, bmpHeight;   // W+H in pixels
   uint8_t  bmpDepth;              // Bit depth (currently must be 24)
   uint32_t bmpImageoffset;        // Start of image data in file
   uint32_t  rowSize;               // Not always = bmpWidth; may have padding
@@ -1018,7 +1015,7 @@ void bmpDraw(const char *filename, uint8_t x, uint8_t y) {
   uint8_t  buffidx = sizeof(sdbuffer); // Current position in sdbuffer
   boolean  goodBmp = false;       // Set to true on valid header parse
   boolean  flip    = true;        // BMP is stored bottom-to-top
-  int  w, h, row, col;
+  int8_t  w, h, row, col;
   uint8_t  r, g, b;
   uint32_t pos = 0;
   const uint8_t  gridWidth = 16;
@@ -1196,7 +1193,7 @@ byte getIndex(byte x, byte y)
 
 void clearStripBuffer()
 {
-  for (int i=0; i<256; i++)
+  for (uint8_t i=0; i<256; i++)
   {
     leds[i] = CRGB::Black;
   }
@@ -1454,9 +1451,9 @@ void breakoutLoop()
       ballMoving = false;
       breakout = false;
       Serial.print(F("Lose!!!"));
-      for (int c=250; c>=0; c=c-15)
+      for (uint8_t c=250; c>=0; c=c-15)
       {
-        for (int i=0; i<256; i++)
+        for (uint8_t i=0; i<256; i++)
         {
           byte r = 0;
           byte g = 0;
@@ -1694,9 +1691,9 @@ void printFreeRAM()
   Serial.println(lowestMem);
 }
 
-int freeRam () {
-  extern int __heap_start, *__brkval; 
-  int v; 
+int8_t freeRam () {
+  extern int8_t __heap_start, *__brkval; 
+  int8_t v; 
   return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval);
 }
 
@@ -1704,7 +1701,7 @@ int freeRam () {
 // https://gist.github.com/endolith/2568571
 // Rotate bits to the left
 // https://en.wikipedia.org/wiki/Circular_shift#Implementing_circular_shifts
-byte rotl(const byte value, int shift) {
+byte rotl(const byte value, int8_t shift) {
   if ((shift &= sizeof(value)*8 - 1) == 0)
     return value;
   return (value << shift) | (value >> (sizeof(value)*8 - shift));
